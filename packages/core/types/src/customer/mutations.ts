@@ -195,6 +195,11 @@ export interface CreateCustomerDTO {
   phone?: string | null
 
   /**
+   * The Pulse Identity Manager ID of the customer.
+   */
+  pim_id?: string | null
+
+  /**
    * Who created the customer.
    */
   created_by?: string | null

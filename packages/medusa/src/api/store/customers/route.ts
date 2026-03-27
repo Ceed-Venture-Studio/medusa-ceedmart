@@ -24,10 +24,14 @@ export const POST = async (
   }
 
   const createCustomers = createCustomerAccountWorkflow(req.scope)
-  const customerData = req.validatedBody
+  const { password, ...customerData } = req.validatedBody
 
   const { result } = await createCustomers.run({
-    input: { customerData, authIdentityId: req.auth_context.auth_identity_id },
+    input: {
+      customerData,
+      authIdentityId: req.auth_context.auth_identity_id,
+      password,
+    },
   })
 
   const customer = await refetchCustomer(

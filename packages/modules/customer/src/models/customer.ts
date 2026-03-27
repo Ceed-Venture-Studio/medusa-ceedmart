@@ -11,6 +11,7 @@ const Customer = model
     last_name: model.text().searchable().nullable(),
     email: model.text().searchable().nullable(),
     phone: model.text().searchable().nullable(),
+    pim_id: model.text().nullable(),
     has_account: model.boolean().default(false),
     metadata: model.json().nullable(),
     created_by: model.text().nullable(),

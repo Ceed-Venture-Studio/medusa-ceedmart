@@ -505,6 +505,11 @@ export interface CustomerDTO {
   phone: string | null
 
   /**
+   * The Pulse Identity Manager ID of the customer.
+   */
+  pim_id: string | null
+
+  /**
    * The groups of the customer.
    */
   groups: {

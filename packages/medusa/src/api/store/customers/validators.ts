@@ -5,11 +5,12 @@ import { createFindParams, createSelectParams } from "../../utils/validators"
 export const StoreGetCustomerParams = createSelectParams()
 
 export const StoreCreateCustomer = z.object({
-  email: z.string().email().nullish(),
+  email: z.string().email(),
   company_name: z.string().nullish(),
-  first_name: z.string().nullish(),
-  last_name: z.string().nullish(),
-  phone: z.string().nullish(),
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  phone: z.string().min(1, "Phone number is required"),
+  password: z.string().min(1, "Password is required"),
   metadata: z.record(z.unknown()).nullish(),
 })
 

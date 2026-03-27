@@ -1,6 +1,8 @@
 import type { CreateCustomerDTO, CustomerDTO } from "@medusajs/framework/types"
 import {
+  createStep,
   createWorkflow,
+  StepResponse,
   transform,
   WorkflowData,
   WorkflowResponse,
@@ -8,6 +10,67 @@ import {
 import { setAuthAppMetadataStep } from "../../auth"
 import { validateCustomerAccountCreation } from "../steps/validate-customer-account-creation"
 import { createCustomersWorkflow } from "./create-customers"
+
+/**
+ * Step to register customer with Pulse Identity Manager.
+ * Calls the Pulse API and returns the external pim_id.
+ */
+type RegisterPulseCustomerInput = {
+  firstName: string
+  lastName: string
+  email: string
+  password: string
+  phone: string
+}
+
+const PULSE_BASE_URL =
+  "https://pulse-identity-manager-218803590341.europe-west1.run.app/api/v1"
+
+const registerPulseCustomerStep = createStep(
+  "register-pulse-customer",
+  async (input: RegisterPulseCustomerInput) => {
+    const apiKey = process.env.PULSE_IDENTITY_API_KEY
+    const tenantId = process.env.PULSE_IDENTITY_TENANT_ID
+    const applicationId = process.env.PULSE_IDENTITY_APP_ID
+
+    if (!apiKey || !tenantId || !applicationId) {
+      throw new Error(
+        "Missing Pulse Identity configuration. Set PULSE_IDENTITY_API_KEY, PULSE_IDENTITY_TENANT_ID, and PULSE_IDENTITY_APP_ID."
+      )
+    }
+
+    const url = `${PULSE_BASE_URL}/tenants/${tenantId}/applications/${applicationId}/customers/register`
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+      },
+      body: JSON.stringify({
+        ...input,
+        scope: "customer",
+      }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        `Pulse Identity registration failed: ${data?.error?.message || response.statusText}`
+      )
+    }
+
+    const pimId = data?.payload?.value?.pimId
+    if (!pimId) {
+      throw new Error(
+        "Pulse Identity registration did not return a customer ID"
+      )
+    }
+
+    return new StepResponse(pimId)
+  }
+)
 
 /**
  * The details of the customer account to create.
@@ -21,6 +84,10 @@ export type CreateCustomerAccountWorkflowInput = {
    * The details of the customer to create.
    */
   customerData: CreateCustomerDTO
+  /**
+   * The password from auth registration, needed for Pulse Identity.
+   */
+  password?: string
 }
 
 export const createCustomerAccountWorkflowId = "create-customer-account"
@@ -58,10 +125,21 @@ export const createCustomerAccountWorkflow = createWorkflow(
   ): WorkflowResponse<CustomerDTO> => {
     validateCustomerAccountCreation(input)
 
-    const customerData = transform({ input }, (data) => {
+    const pulseInput = transform({ input }, (data) => ({
+      firstName: data.input.customerData.first_name || "",
+      lastName: data.input.customerData.last_name || "",
+      email: data.input.customerData.email || "",
+      password: data.input.password || "",
+      phone: data.input.customerData.phone || "",
+    }))
+
+    const pimId = registerPulseCustomerStep(pulseInput)
+
+    const customerData = transform({ input, pimId }, (data) => {
       return {
         ...data.input.customerData,
         has_account: !!data.input.authIdentityId,
+        pim_id: data.pimId,
       }
     })
 

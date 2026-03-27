@@ -5,7 +5,12 @@ import {
   BaseUpdateCustomerAddress,
 } from "../common"
 
-export interface StoreCreateCustomer extends BaseCreateCustomer {}
+export interface StoreCreateCustomer extends BaseCreateCustomer {
+  /**
+   * The customer's password, forwarded to Pulse Identity for registration.
+   */
+  password: string
+}
 export interface StoreUpdateCustomer extends BaseUpdateCustomer {}
 
 export interface StoreCreateCustomerAddress extends BaseCreateCustomerAddress {}

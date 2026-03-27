@@ -126,6 +126,10 @@ export interface BaseCustomer {
    */
   phone?: string | null
   /**
+   * The Pulse Identity Manager ID.
+   */
+  pim_id?: string | null
+  /**
    * Key-value pairs of custom data.
    */
   metadata?: Record<string, unknown>
@@ -255,15 +259,19 @@ export interface BaseCreateCustomer {
   /**
    * The customer's first name.
    */
-  first_name?: string
+  first_name: string
   /**
    * The customer's last name.
    */
-  last_name?: string
+  last_name: string
   /**
    * The customer's phone number.
    */
-  phone?: string
+  phone: string
+  /**
+   * The Pulse Identity Manager ID.
+   */
+  pim_id?: string
   /**
    * Key-value pairs of custom data.
    */
