@@ -1,0 +1,33 @@
+{
+  "name": "ceedmart",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ceedmart E-Commerce Platform",
+  "scripts": {
+    "dev": "medusa develop",
+    "start": "medusa start",
+    "build": "medusa build",
+    "seed": "medusa exec ./src/scripts/seed.ts",
+    "db:migrate": "medusa db:migrate",
+    "db:rollback": "medusa db:rollback",
+    "user": "medusa user"
+  },
+  "dependencies": {
+    "@medusajs/auth": "workspace:*",
+    "@medusajs/auth-emailpass": "workspace:*",
+    "@medusajs/cli": "workspace:*",
+    "@medusajs/file-local": "workspace:*",
+    "@medusajs/framework": "workspace:*",
+    "@medusajs/fulfillment-manual": "workspace:*",
+    "@medusajs/medusa": "workspace:*",
+    "@medusajs/notification-local": "workspace:*",
+    "@medusajs/notification-pulse-email": "workspace:*",
+    "@medusajs/notification-pulse-sms": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

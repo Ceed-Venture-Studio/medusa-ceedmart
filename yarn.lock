@@ -3267,7 +3267,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@medusajs/auth-emailpass@2.12.5, @medusajs/auth-emailpass@workspace:packages/modules/providers/auth-emailpass":
+"@medusajs/auth-emailpass@2.12.5, @medusajs/auth-emailpass@workspace:*, @medusajs/auth-emailpass@workspace:packages/modules/providers/auth-emailpass":
   version: 0.0.0-use.local
   resolution: "@medusajs/auth-emailpass@workspace:packages/modules/providers/auth-emailpass"
   dependencies:
@@ -3370,7 +3370,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@medusajs/cli@2.12.5, @medusajs/cli@workspace:packages/cli/medusa-cli":
+"@medusajs/cli@2.12.5, @medusajs/cli@workspace:*, @medusajs/cli@workspace:packages/cli/medusa-cli":
   version: 0.0.0-use.local
   resolution: "@medusajs/cli@workspace:packages/cli/medusa-cli"
   dependencies:
@@ -3582,7 +3582,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@medusajs/file-local@2.12.5, @medusajs/file-local@workspace:packages/modules/providers/file-local":
+"@medusajs/file-local@2.12.5, @medusajs/file-local@workspace:*, @medusajs/file-local@workspace:packages/modules/providers/file-local":
   version: 0.0.0-use.local
   resolution: "@medusajs/file-local@workspace:packages/modules/providers/file-local"
   dependencies:
@@ -3664,7 +3664,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@medusajs/fulfillment-manual@2.12.5, @medusajs/fulfillment-manual@workspace:^, @medusajs/fulfillment-manual@workspace:packages/modules/providers/fulfillment-manual":
+"@medusajs/fulfillment-manual@2.12.5, @medusajs/fulfillment-manual@workspace:*, @medusajs/fulfillment-manual@workspace:^, @medusajs/fulfillment-manual@workspace:packages/modules/providers/fulfillment-manual":
   version: 0.0.0-use.local
   resolution: "@medusajs/fulfillment-manual@workspace:packages/modules/providers/fulfillment-manual"
   dependencies:
@@ -3892,13 +3892,31 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@medusajs/notification-local@2.12.5, @medusajs/notification-local@workspace:packages/modules/providers/notification-local":
+"@medusajs/notification-local@2.12.5, @medusajs/notification-local@workspace:*, @medusajs/notification-local@workspace:packages/modules/providers/notification-local":
   version: 0.0.0-use.local
   resolution: "@medusajs/notification-local@workspace:packages/modules/providers/notification-local"
   dependencies:
     "@medusajs/framework": 2.12.5
   peerDependencies:
     "@medusajs/framework": 2.12.5
+  languageName: unknown
+  linkType: soft
+
+"@medusajs/notification-pulse-email@workspace:*, @medusajs/notification-pulse-email@workspace:packages/modules/providers/notification-pulse-email":
+  version: 0.0.0-use.local
+  resolution: "@medusajs/notification-pulse-email@workspace:packages/modules/providers/notification-pulse-email"
+  dependencies:
+    "@medusajs/framework": "workspace:*"
+    typescript: ^5.6.0
+  languageName: unknown
+  linkType: soft
+
+"@medusajs/notification-pulse-sms@workspace:*, @medusajs/notification-pulse-sms@workspace:packages/modules/providers/notification-pulse-sms":
+  version: 0.0.0-use.local
+  resolution: "@medusajs/notification-pulse-sms@workspace:packages/modules/providers/notification-pulse-sms"
+  dependencies:
+    "@medusajs/framework": "workspace:*"
+    typescript: ^5.6.0
   languageName: unknown
   linkType: soft
 
@@ -14053,6 +14071,24 @@ __metadata:
   checksum: ccf64bcb6c0232cdc5b7bd91ddd06e23a4b541f138336d4725233ac538041fb2f29c2e86c3c4a7a61ef990b665348db23a047060b9414c3a6603e9fa61ad4626
   languageName: node
   linkType: hard
+
+"ceedmart@workspace:app/ceedmart":
+  version: 0.0.0-use.local
+  resolution: "ceedmart@workspace:app/ceedmart"
+  dependencies:
+    "@medusajs/auth": "workspace:*"
+    "@medusajs/auth-emailpass": "workspace:*"
+    "@medusajs/cli": "workspace:*"
+    "@medusajs/file-local": "workspace:*"
+    "@medusajs/framework": "workspace:*"
+    "@medusajs/fulfillment-manual": "workspace:*"
+    "@medusajs/medusa": "workspace:*"
+    "@medusajs/notification-local": "workspace:*"
+    "@medusajs/notification-pulse-email": "workspace:*"
+    "@medusajs/notification-pulse-sms": "workspace:*"
+    typescript: ^5.6.0
+  languageName: unknown
+  linkType: soft
 
 "chai@npm:^5.1.1, chai@npm:^5.2.0":
   version: 5.3.3
@@ -27209,7 +27245,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^5.6.2":
+"typescript@npm:^5.6.0, typescript@npm:^5.6.2":
   version: 5.9.3
   resolution: "typescript@npm:5.9.3"
   bin:
@@ -27219,7 +27255,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@^5.6.2#~builtin<compat/typescript>":
+"typescript@patch:typescript@^5.6.0#~builtin<compat/typescript>, typescript@patch:typescript@^5.6.2#~builtin<compat/typescript>":
   version: 5.9.3
   resolution: "typescript@patch:typescript@npm%3A5.9.3#~builtin<compat/typescript>::version=5.9.3&hash=7ad353"
   bin:
