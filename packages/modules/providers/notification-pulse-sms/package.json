@@ -1,0 +1,22 @@
+{
+  "name": "@medusajs/notification-pulse-sms",
+  "version": "1.0.0",
+  "description": "Pulse SMS notification provider for Ceedmart",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "yarn run -T tsc --build",
+    "watch": "yarn run -T tsc --build --watch"
+  },
+  "dependencies": {
+    "@medusajs/framework": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
