@@ -2,6 +2,43 @@ import { defineConfig, Modules } from "@medusajs/framework/utils"
 import os from "os"
 import path from "path"
 
+const notificationProviders: any[] = [
+  {
+    resolve: "@medusajs/notification-local",
+    id: "local",
+    options: {
+      name: "Local Notification Provider",
+      channels: ["feed"],
+    },
+  },
+]
+
+if (process.env.PULSE_NOTIFICATION_EMAIL_TOKEN) {
+  notificationProviders.push({
+    resolve: "@medusajs/notification-pulse-email",
+    id: "pulse-email",
+    options: {
+      token: process.env.PULSE_NOTIFICATION_EMAIL_TOKEN,
+      application_id: process.env.PULSE_IDENTITY_APP_ID,
+      from: "noreply@ceedmart.com",
+      alias: "Ceedmart",
+      channels: ["email"],
+    },
+  })
+}
+
+if (process.env.PULSE_NOTIFICATION_SMS_TOKEN) {
+  notificationProviders.push({
+    resolve: "@medusajs/notification-pulse-sms",
+    id: "pulse-sms",
+    options: {
+      token: process.env.PULSE_NOTIFICATION_SMS_TOKEN,
+      application_id: process.env.PULSE_IDENTITY_APP_ID,
+      channels: ["sms"],
+    },
+  })
+}
+
 export default defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL!,
@@ -42,36 +79,7 @@ export default defineConfig({
     [Modules.NOTIFICATION]: {
       resolve: "@medusajs/notification",
       options: {
-        providers: [
-          {
-            resolve: "@medusajs/notification-local",
-            id: "local",
-            options: {
-              name: "Local Notification Provider",
-              channels: ["feed"],
-            },
-          },
-          {
-            resolve: "@medusajs/notification-pulse-email",
-            id: "pulse-email",
-            options: {
-              token: process.env.PULSE_NOTIFICATION_EMAIL_TOKEN,
-              application_id: process.env.PULSE_IDENTITY_APP_ID,
-              from: "noreply@ceedmart.com",
-              alias: "Ceedmart",
-              channels: ["email"],
-            },
-          },
-          {
-            resolve: "@medusajs/notification-pulse-sms",
-            id: "pulse-sms",
-            options: {
-              token: process.env.PULSE_NOTIFICATION_SMS_TOKEN,
-              application_id: process.env.PULSE_IDENTITY_APP_ID,
-              channels: ["sms"],
-            },
-          },
-        ],
+        providers: notificationProviders,
       },
     },
     [Modules.FILE]: {
