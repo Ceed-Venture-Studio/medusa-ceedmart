@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.6
 FROM node:22-bookworm-slim AS base
 RUN apt-get update \
  && apt-get install --no-install-recommends -y tini python3 make g++ \
@@ -10,20 +9,24 @@ FROM base AS builder
 WORKDIR /workspace
 
 # Workspace metadata (cache-friendly layer)
-COPY package.json yarn.lock .yarnrc.yml _tsconfig.base.json ./
+COPY package.json yarn.lock .yarnrc.yml _tsconfig.base.json turbo.json ./
 COPY .yarn/ ./.yarn/
 
 # Workspace source
 COPY packages/ ./packages/
 COPY app/ ./app/
 
-# Install the whole workspace. Tolerate soft errors (some packages in
-# the fork have mismatched versions that don't block the build).
+# Install the whole workspace. Tolerate soft warnings.
 RUN yarn install --network-timeout 600000 || yarn install --network-timeout 600000
 
-# Build the Ceedmart app → outputs to app/ceedmart/.medusa/server/
-WORKDIR /workspace/app/ceedmart
+# Build the transitive deps of the ceedmart app first (medusa-cli,
+# framework, core-flows, admin-bundler, etc. — all compile to dist/).
+# Filter syntax "ceedmart^..." = upstream deps only, not ceedmart itself.
 ENV NODE_OPTIONS=--max-old-space-size=4096
+RUN yarn turbo run build --filter='ceedmart^...' --concurrency=100% --no-daemon
+
+# Now build the Ceedmart app → outputs to app/ceedmart/.medusa/server/
+WORKDIR /workspace/app/ceedmart
 ENV DISABLE_MEDUSA_ADMIN=false
 RUN yarn build
 
@@ -34,7 +37,7 @@ RUN groupadd --system medusa \
 WORKDIR /app
 
 # Copy the entire workspace. app/ceedmart/.medusa/server/ holds the built app.
-# Runtime needs node_modules resolved via the workspace, so ship everything.
+# Runtime resolves workspace deps via the whole tree, so ship it all.
 COPY --from=builder --chown=medusa:medusa /workspace /app
 
 USER medusa
