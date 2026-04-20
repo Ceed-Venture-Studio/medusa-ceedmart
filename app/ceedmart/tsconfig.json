@@ -4,10 +4,12 @@
     "module": "Node16",
     "moduleResolution": "Node16",
     "esModuleInterop": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "declaration": true
   },
   "include": ["src/**/*", "medusa-config.ts"]

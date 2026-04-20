@@ -1,0 +1,31 @@
+.git
+.gitignore
+.env
+.env.*
+*.xlsx
+docs/
+integration-tests/
+www/
+**/__tests__/
+**/*.test.*
+**/*.spec.*
+
+# Build/test artifacts — always regenerate in-container
+**/node_modules
+**/.medusa
+**/dist
+**/.turbo
+**/.cache
+**/tsconfig.tsbuildinfo
+.yarn/cache/
+
+# Tool/IDE
+.vscode
+.idea
+.DS_Store
+
+# Original root project (superseded by app/ceedmart/)
+medusa-config.js
+src/
+public/
+tsconfig.json
