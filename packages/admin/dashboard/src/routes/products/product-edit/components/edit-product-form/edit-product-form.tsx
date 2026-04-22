@@ -1,9 +1,10 @@
-import { Button, Input, Select, Text, Textarea, toast } from "@medusajs/ui"
+import { Button, Input, Select, Text, toast } from "@medusajs/ui"
 import { useTranslation } from "react-i18next"
 import * as zod from "zod"
 
 import { HttpTypes } from "@medusajs/types"
 import { Form } from "../../../../../components/common/form"
+import { RichTextEditor } from "../../../../../components/common/rich-text-editor"
 import { SwitchBox } from "../../../../../components/common/switch-box"
 import { RouteDrawer, useRouteModal } from "../../../../../components/modals"
 import { useExtendableForm } from "../../../../../dashboard-app/forms/hooks"
@@ -211,7 +212,7 @@ export const EditProductForm = ({ product }: EditProductFormProps) => {
                         {t("fields.description")}
                       </Form.Label>
                       <Form.Control>
-                        <Textarea {...field} />
+                        <RichTextEditor {...field} />
                       </Form.Control>
                       <Form.ErrorMessage />
                     </Form.Item>

@@ -24,8 +24,15 @@ www/
 .idea
 .DS_Store
 
-# Original root project (superseded by app/ceedmart/)
-medusa-config.js
-src/
-public/
-tsconfig.json
+# Original root project (superseded by app/ceedmart/) — anchored to repo root
+# only, otherwise gitignore-style patterns also match same-named dirs inside
+# workspace packages and rip out their sources.
+/medusa-config.js
+/src/
+/public/
+/tsconfig.json
+
+# Stale local compile of app/ceedmart/medusa-config.ts (Node prefers .js over
+# .ts when both are present, so we must not ship the .js — see .dockerignore).
+/app/ceedmart/medusa-config.js
+/app/ceedmart/medusa-config.d.ts

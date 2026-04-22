@@ -20,8 +20,10 @@ ENV MEDUSA_BACKEND_URL=${MEDUSA_BACKEND_URL}
 ENV DISABLE_MEDUSA_ADMIN=false
 ENV NODE_OPTIONS=--max-old-space-size=4096
 
-# Compile all transitive deps first so medusa-cli + admin-bundler exist.
-RUN yarn turbo run build --filter='ceedmart^...' --concurrency=100% --no-daemon
+# Build all workspace packages — @medusajs/medusa re-exports every workspace
+# module without declaring deps, so a filtered build misses things like
+# @medusajs/rbac and TypeScript fails. See Dockerfile for full reasoning.
+RUN yarn turbo run build --concurrency=100% --no-daemon
 
 WORKDIR /workspace/app/ceedmart
 RUN yarn build

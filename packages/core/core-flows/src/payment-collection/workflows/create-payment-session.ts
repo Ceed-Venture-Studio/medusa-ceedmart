@@ -99,6 +99,7 @@ export const createPaymentSessionsWorkflow = createWorkflow(
             "first_name",
             "last_name",
             "phone",
+            "pim_id",
             "addresses.*",
             "account_holders.*",
             "metadata",

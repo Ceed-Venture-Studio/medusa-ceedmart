@@ -1,0 +1,96 @@
+# Cloud Build pipeline: builds API + Admin images and pushes to Artifact Registry.
+# Cloud Run deploy is handled separately by deploy/deploy-cloudrun.sh so secrets
+# stay out of source control.
+#
+# Trigger:
+#   gcloud builds submit --config=cloudbuild.yaml \
+#     --substitutions=SHORT_SHA=$(git rev-parse --short=10 HEAD)
+#
+# Layer caching:
+#   - DOCKER_BUILDKIT=1 enables BuildKit so --cache-from honours per-layer hits
+#   - --build-arg BUILDKIT_INLINE_CACHE=1 embeds layer metadata into pushed
+#     images so future builds can reuse them
+#   - Each step pulls the previous :latest image as a cache source. The pull
+#     is allowed to fail (first run, deleted tag) — `|| true` keeps going.
+#
+# Expected cache behaviour:
+#   - Only app/ceedmart/ changed → ~5 min (yarn install + turbo build reused)
+#   - A workspace package src/ changed → ~12 min (turbo cache miss for that package)
+#   - yarn.lock changed → full rebuild (~22 min)
+
+substitutions:
+  _REGION: europe-west1
+  _REPO: ceedmart-docker
+  _BACKEND_URL: https://ceedmart-api-870514614467.europe-west1.run.app
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+  env:
+    - DOCKER_BUILDKIT=1
+
+timeout: 3600s
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:latest
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:latest
+
+steps:
+  - id: pull-api-cache
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:latest || true
+
+  - id: build-api
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['pull-api-cache']
+    args:
+      - build
+      - -f
+      - Dockerfile
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:latest
+      - --build-arg
+      - BUILDKIT_INLINE_CACHE=1
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:latest
+      - .
+
+  # Serialized after build-api: running two turbo builds in parallel OOMs the
+  # E2_HIGHCPU_8 worker (8 GB RAM, each turbo run needs ~4 GB Node heap +
+  # BuildKit overhead). Bump the machineType to E2_HIGHCPU_32 if you want
+  # parallel.
+  - id: pull-admin-cache
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['build-api']
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:latest || true
+
+  - id: build-admin
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['pull-admin-cache']
+    args:
+      - build
+      - -f
+      - Dockerfile.admin
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:latest
+      - --build-arg
+      - BUILDKIT_INLINE_CACHE=1
+      - --build-arg
+      - MEDUSA_BACKEND_URL=${_BACKEND_URL}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:latest
+      - .

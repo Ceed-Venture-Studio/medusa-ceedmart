@@ -34,41 +34,49 @@ const registerPulseCustomerStep = createStep(
     const applicationId = process.env.PULSE_IDENTITY_APP_ID
 
     if (!apiKey || !tenantId || !applicationId) {
-      throw new Error(
-        "Missing Pulse Identity configuration. Set PULSE_IDENTITY_API_KEY, PULSE_IDENTITY_TENANT_ID, and PULSE_IDENTITY_APP_ID."
+      console.warn(
+        "Pulse Identity not configured — skipping registration. Set PULSE_IDENTITY_API_KEY, PULSE_IDENTITY_TENANT_ID, and PULSE_IDENTITY_APP_ID."
       )
+      return new StepResponse(null)
     }
 
-    const url = `${PULSE_BASE_URL}/tenants/${tenantId}/applications/${applicationId}/customers/register`
+    try {
+      const url = `${PULSE_BASE_URL}/tenants/${tenantId}/applications/${applicationId}/customers/register`
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-      },
-      body: JSON.stringify({
-        ...input,
-        scope: "customer",
-      }),
-    })
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
+        body: JSON.stringify({
+          ...input,
+          scope: "customer",
+        }),
+      })
 
-    const data = await response.json()
+      const data = await response.json()
 
-    if (!response.ok) {
-      throw new Error(
-        `Pulse Identity registration failed: ${data?.error?.message || response.statusText}`
-      )
+      if (!response.ok) {
+        console.error(
+          `Pulse Identity registration failed: ${data?.error?.message || response.statusText}`
+        )
+        return new StepResponse(null)
+      }
+
+      const pimId = data?.payload?.value?.pimId
+      if (!pimId) {
+        console.warn(
+          "Pulse Identity registration did not return a customer ID"
+        )
+        return new StepResponse(null)
+      }
+
+      return new StepResponse(pimId)
+    } catch (err: any) {
+      console.error(`Pulse Identity registration error: ${err.message}`)
+      return new StepResponse(null)
     }
-
-    const pimId = data?.payload?.value?.pimId
-    if (!pimId) {
-      throw new Error(
-        "Pulse Identity registration did not return a customer ID"
-      )
-    }
-
-    return new StepResponse(pimId)
   }
 )
 
@@ -136,11 +144,14 @@ export const createCustomerAccountWorkflow = createWorkflow(
     const pimId = registerPulseCustomerStep(pulseInput)
 
     const customerData = transform({ input, pimId }, (data) => {
-      return {
+      const result: any = {
         ...data.input.customerData,
         has_account: !!data.input.authIdentityId,
-        pim_id: data.pimId,
       }
+      if (data.pimId) {
+        result.pim_id = data.pimId
+      }
+      return result
     })
 
     const customers = createCustomersWorkflow.runAsStep({

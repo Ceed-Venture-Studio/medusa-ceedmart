@@ -19,11 +19,15 @@ COPY app/ ./app/
 # Install the whole workspace. Tolerate soft warnings.
 RUN yarn install --network-timeout 600000 || yarn install --network-timeout 600000
 
-# Build the transitive deps of the ceedmart app first (medusa-cli,
-# framework, core-flows, admin-bundler, etc. — all compile to dist/).
-# Filter syntax "ceedmart^..." = upstream deps only, not ceedmart itself.
+# Build all workspace packages.
+#
+# We deliberately do NOT use --filter='ceedmart^...' here. The @medusajs/medusa
+# package re-exports every workspace module via packages/medusa/src/modules/*.ts
+# stubs (e.g. `import RbacModule from "@medusajs/rbac"`) without declaring those
+# packages as deps. Filtered turbo runs miss them and the medusa TS build fails
+# with "Cannot find module '@medusajs/rbac'".
 ENV NODE_OPTIONS=--max-old-space-size=4096
-RUN yarn turbo run build --filter='ceedmart^...' --concurrency=100% --no-daemon
+RUN yarn turbo run build --concurrency=100% --no-daemon
 
 # Now build the Ceedmart app → outputs to app/ceedmart/.medusa/server/
 WORKDIR /workspace/app/ceedmart
@@ -51,4 +55,4 @@ ENV MEDUSA_WORKER_MODE=shared
 EXPOSE 9000
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "yarn medusa start -H 0.0.0.0 -p ${PORT:-9000}"]
+CMD ["sh", "-c", "yarn medusa db:migrate && yarn medusa start -H 0.0.0.0 -p ${PORT:-9000}"]

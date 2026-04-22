@@ -27,3 +27,10 @@ medusa-config.js
 src/
 public/
 tsconfig.json
+
+# Stale compiled output of app/ceedmart/medusa-config.ts. We must NOT ship the
+# locally-compiled .js because Node prefers .js over .ts when both are present
+# in cwd, and the .ts is the canonical source we keep up to date. Let the
+# container build regenerate the .js (or run from .ts via ts-node).
+app/ceedmart/medusa-config.js
+app/ceedmart/medusa-config.d.ts

@@ -8,6 +8,7 @@
     "start": "medusa start",
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
+    "create-admin": "medusa exec ./src/scripts/create-admin.ts",
     "db:migrate": "medusa db:migrate",
     "db:rollback": "medusa db:rollback",
     "user": "medusa user"
@@ -15,14 +16,21 @@
   "dependencies": {
     "@medusajs/auth": "workspace:*",
     "@medusajs/auth-emailpass": "workspace:*",
+    "@medusajs/cache-redis": "workspace:*",
     "@medusajs/cli": "workspace:*",
+    "@medusajs/event-bus-redis": "workspace:*",
+    "@medusajs/file": "workspace:*",
     "@medusajs/file-local": "workspace:*",
+    "@medusajs/file-s3": "workspace:*",
     "@medusajs/framework": "workspace:*",
     "@medusajs/fulfillment-manual": "workspace:*",
     "@medusajs/medusa": "workspace:*",
     "@medusajs/notification-local": "workspace:*",
     "@medusajs/notification-pulse-email": "workspace:*",
-    "@medusajs/notification-pulse-sms": "workspace:*"
+    "@medusajs/notification-pulse-sms": "workspace:*",
+    "@medusajs/payment": "workspace:*",
+    "@medusajs/payment-pulse-pay": "workspace:*",
+    "@medusajs/workflow-engine-redis": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

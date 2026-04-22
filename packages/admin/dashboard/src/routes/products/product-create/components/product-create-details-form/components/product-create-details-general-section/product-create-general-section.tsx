@@ -1,8 +1,9 @@
-import { Input, Textarea } from "@medusajs/ui"
+import { Input } from "@medusajs/ui"
 import { UseFormReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 
 import { Form } from "../../../../../../../components/common/form"
+import { RichTextEditor } from "../../../../../../../components/common/rich-text-editor"
 import { HandleInput } from "../../../../../../../components/inputs/handle-input"
 import { ProductCreateSchemaType } from "../../../../types"
 
@@ -80,7 +81,10 @@ export const ProductCreateGeneralSection = ({
                 {t("products.fields.description.label")}
               </Form.Label>
               <Form.Control>
-                <Textarea {...field} placeholder={t("products.fields.description.placeholder")} />
+                <RichTextEditor
+                  {...field}
+                  placeholder={t("products.fields.description.placeholder")}
+                />
               </Form.Control>
             </Form.Item>
           )

@@ -133,12 +133,22 @@ function resolvePlugins(
   configPlugins: InputConfig["plugins"],
   { isCloud }: { isCloud: boolean }
 ): ConfigModule["plugins"] {
-  const defaultPlugins: Map<string, ConfigModule["plugins"][number]> = new Map([
-    [
-      "@medusajs/draft-order",
-      { resolve: "@medusajs/draft-order", options: {} },
-    ],
-  ])
+  // Ceedmart patch: gate the auto-included draft-order plugin behind an env
+  // var. Upstream Medusa always injects it, but its `medusa plugin:build`
+  // step fails inside our Cloud Build container (resolveCwd can't find
+  // @medusajs/medusa/commands/plugin/build at the time the plugin's build
+  // script runs), and it pulls in @medusajs/draft-order/admin as a Vite
+  // import that breaks the admin SPA bundle. Set ENABLE_DRAFT_ORDER=true to
+  // opt in once the plugin can be built reliably.
+  const defaultPlugins: Map<string, ConfigModule["plugins"][number]> =
+    process.env.ENABLE_DRAFT_ORDER === "true"
+      ? new Map([
+          [
+            "@medusajs/draft-order",
+            { resolve: "@medusajs/draft-order", options: {} },
+          ],
+        ])
+      : new Map()
 
   if (configPlugins?.length) {
     configPlugins.forEach((plugin) => {
