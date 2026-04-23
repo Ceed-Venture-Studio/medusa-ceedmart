@@ -67,6 +67,16 @@ const fileProvider = process.env.S3_BUCKET
         bucket: process.env.S3_BUCKET,
         endpoint: process.env.S3_ENDPOINT || "https://storage.googleapis.com",
         prefix: process.env.S3_PREFIX || "",
+        // GCS S3-compat rejects the AWS SDK v3 default flexible checksums
+        // (x-amz-checksum-crc32 etc.) with "Invalid argument". Disable both
+        // the request-side checksum calc and response-side validation, and
+        // force path-style URLs since virtual-host style on GCS occasionally
+        // misbehaves with bucket names containing dots/dashes.
+        additional_client_config: {
+          requestChecksumCalculation: "WHEN_REQUIRED",
+          responseChecksumValidation: "WHEN_REQUIRED",
+          forcePathStyle: true,
+        },
       },
     }
   : {
@@ -75,6 +85,12 @@ const fileProvider = process.env.S3_BUCKET
       options: {
         upload_dir: "static",
         private_upload_dir: "static-private",
+        // file-local returns a public URL to the admin so images can render.
+        // Default is http://localhost:9000/static, but on this machine 9000
+        // is taken by MinIO, so we run dev on 9100 and the URL must match.
+        backend_url:
+          process.env.FILE_LOCAL_BASE_URL ||
+          `http://localhost:${process.env.PORT || 9100}/static`,
       },
     }
 
