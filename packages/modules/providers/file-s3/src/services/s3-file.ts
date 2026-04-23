@@ -38,6 +38,7 @@ interface S3FileServiceConfig {
   cacheControl?: string
   downloadFileDuration?: number
   additionalClientConfig?: Record<string, any>
+  disableAcl?: boolean
 }
 
 const DEFAULT_UPLOAD_EXPIRATION_DURATION_SECONDS = 60 * 60
@@ -75,6 +76,7 @@ export class S3FileService extends AbstractFileProviderService {
       cacheControl: options.cache_control ?? "public, max-age=31536000",
       downloadFileDuration: options.download_file_duration ?? 60 * 60,
       additionalClientConfig: options.additional_client_config ?? {},
+      disableAcl: options.disable_acl ?? false,
     }
     this.logger_ = logger
     this.client_ = this.getClient()
@@ -140,7 +142,9 @@ export class S3FileService extends AbstractFileProviderService {
       // protected private_access_key_id_: string
       // protected private_secret_access_key_: string
 
-      ACL: file.access === "public" ? "public-read" : "private",
+      ...(this.config_.disableAcl
+        ? {}
+        : { ACL: file.access === "public" ? "public-read" : "private" }),
       Bucket: this.config_.bucket,
       Body: content,
       Key: fileKey,
@@ -188,7 +192,9 @@ export class S3FileService extends AbstractFileProviderService {
     const upload = new Upload({
       client: this.client_,
       params: {
-        ACL: fileData.access === "public" ? "public-read" : "private",
+        ...(this.config_.disableAcl
+          ? {}
+          : { ACL: fileData.access === "public" ? "public-read" : "private" }),
         Bucket: this.config_.bucket,
         Key: fileKey,
         Body: pass,
@@ -274,7 +280,7 @@ export class S3FileService extends AbstractFileProviderService {
     const fileKey = `${this.config_.prefix}${fileData.filename}`
 
     let acl: ObjectCannedACL | undefined
-    if (fileData.access) {
+    if (fileData.access && !this.config_.disableAcl) {
       acl = fileData.access === "public" ? "public-read" : "private"
     }
 

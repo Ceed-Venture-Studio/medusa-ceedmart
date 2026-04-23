@@ -77,6 +77,12 @@ const fileProvider = process.env.S3_BUCKET
           responseChecksumValidation: "WHEN_REQUIRED",
           forcePathStyle: true,
         },
+        // GCS doesn't support AWS canned ACLs (x-amz-acl); sending one makes
+        // it reject the whole PUT with "Invalid argument". Access is governed
+        // by the bucket-level `allUsers:roles/storage.objectViewer` IAM
+        // binding instead, so every upload is publicly readable without an
+        // explicit per-object ACL.
+        disable_acl: true,
       },
     }
   : {
