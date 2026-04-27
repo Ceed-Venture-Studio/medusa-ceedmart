@@ -212,6 +212,17 @@ export default defineConfig({
                 : "http://localhost:8000/ng/checkout?step=payment",
             },
           },
+          // POS-only manual providers — cashier confirms receipt out-of-band.
+          // Each registers as its own row in payment_provider so reports can
+          // distinguish bank-transfer revenue from "other" miscellaneous.
+          {
+            resolve: "./src/modules/payment-providers/bank-transfer",
+            id: "manual",
+          },
+          {
+            resolve: "./src/modules/payment-providers/other",
+            id: "manual",
+          },
         ],
       },
     },
