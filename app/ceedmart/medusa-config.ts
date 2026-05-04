@@ -230,6 +230,9 @@ export default defineConfig({
     search_log: {
       resolve: "./src/modules/search-log",
     },
+    solar: {
+      resolve: "./src/modules/solar",
+    },
   },
 })
 
