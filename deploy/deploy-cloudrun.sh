@@ -27,22 +27,26 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# Build the comma-separated KEY=VAL list for --set-env-vars from the env file.
-# Skips blank lines and comments. Values with commas use the ^@^ delimiter trick.
-build_env_args() {
-  local pairs=()
+# Convert the .env file into a YAML file Cloud Run consumes via --env-vars-file.
+# We tried --set-env-vars with the ^@^ delimiter but values like DATABASE_URL
+# (contains "@") and STORE_CORS (contains ",") collided with both the default
+# and custom delimiters. YAML sidesteps quoting entirely.
+ENV_YAML="$(mktemp -t cloudrun-env.XXXXXX.yaml)"
+trap 'rm -f "$ENV_YAML"' EXIT
+
+build_env_yaml() {
   while IFS='=' read -r key value; do
     [[ -z "$key" || "$key" =~ ^# ]] && continue
-    # Strip surrounding quotes if any
     value="${value%\"}"; value="${value#\"}"
-    pairs+=("${key}=${value}")
+    # Escape single quotes by doubling them, then wrap value in single quotes.
+    # Any byte is legal inside YAML single-quoted strings except a bare single
+    # quote, so escaping that one character is enough.
+    local escaped="${value//\'/\'\'}"
+    printf "%s: '%s'\n" "$key" "$escaped"
   done < "$ENV_FILE"
-  # Use ^@^ as delimiter so values can contain commas
-  local IFS='@'
-  echo "^@^${pairs[*]}"
 }
 
-ENV_ARGS=$(build_env_args)
+build_env_yaml > "$ENV_YAML"
 
 if [[ -z "${SKIP_API:-}" ]]; then
   echo ">>> Deploying $API_SERVICE (image: api:$IMAGE_TAG)"
@@ -60,7 +64,7 @@ if [[ -z "${SKIP_API:-}" ]]; then
     --timeout=600 \
     --no-cpu-throttling \
     --allow-unauthenticated \
-    --set-env-vars="$ENV_ARGS"
+    --env-vars-file="$ENV_YAML"
 fi
 
 if [[ -z "${SKIP_ADMIN:-}" ]]; then
