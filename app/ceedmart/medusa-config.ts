@@ -90,7 +90,11 @@ const fileProvider = process.env.S3_BUCKET
       id: "local",
       options: {
         upload_dir: "static",
-        private_upload_dir: "static-private",
+        // Nest under static/ so the medusa develop watcher (which ignores
+        // "static") doesn't restart mid-upload — CSV imports land here and
+        // a restart between POST /admin/uploads and POST /admin/products/imports
+        // surfaces in the admin as "failed to fetch".
+        private_upload_dir: "static/.private",
         // file-local returns a public URL to the admin so images can render.
         // Default is http://localhost:9000/static, but on this machine 9000
         // is taken by MinIO, so we run dev on 9100 and the URL must match.
