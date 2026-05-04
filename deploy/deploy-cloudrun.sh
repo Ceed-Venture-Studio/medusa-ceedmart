@@ -46,6 +46,10 @@ ENV_ARGS=$(build_env_args)
 
 if [[ -z "${SKIP_API:-}" ]]; then
   echo ">>> Deploying $API_SERVICE (image: api:$IMAGE_TAG)"
+  # --no-cpu-throttling: keep CPU allocated outside HTTP requests so async
+  # workflows (e.g. process-import-chunks during a bulk product upload) can
+  # progress between the 202 confirm response and the next inbound request.
+  # Without this, large imports stall until something else hits the API.
   gcloud run deploy "$API_SERVICE" \
     --project="$PROJECT" \
     --region="$REGION" \
@@ -54,6 +58,7 @@ if [[ -z "${SKIP_API:-}" ]]; then
     --min-instances=1 --max-instances=1 \
     --cpu=1 --memory=2Gi \
     --timeout=600 \
+    --no-cpu-throttling \
     --allow-unauthenticated \
     --set-env-vars="$ENV_ARGS"
 fi
