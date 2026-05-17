@@ -6,7 +6,15 @@ import {
   MedusaResponse,
 } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import multer from "multer"
 import { SEARCH_LOG_MODULE } from "../modules/search-log"
+
+// 10 MB cap per banner image — comfortably above the largest hero
+// (1920×823 png ~3-4 MB) and below memory thresholds.
+const bannerUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+})
 
 const logCustomerSearch = async (
   req: MedusaRequest,
@@ -73,6 +81,13 @@ export default defineMiddlewares({
       method: ["GET"],
       matcher: "/store/products",
       middlewares: [logCustomerSearch],
+    },
+    {
+      method: ["POST"],
+      matcher: "/admin/banners/upload",
+      // multer's RequestHandler type isn't directly assignable to Medusa's
+      // middleware type; cast through. Pattern used by Medusa core itself.
+      middlewares: [bannerUpload.single("file") as any],
     },
   ],
 })

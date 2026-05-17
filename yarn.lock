@@ -14466,6 +14466,7 @@ __metadata:
     "@medusajs/payment": "workspace:*"
     "@medusajs/payment-pulse-pay": "workspace:*"
     "@medusajs/workflow-engine-redis": "workspace:*"
+    image-size: ^2.0.2
     typescript: ^5.6.0
   languageName: unknown
   linkType: soft
@@ -18764,6 +18765,15 @@ __metadata:
   version: 5.3.2
   resolution: "ignore@npm:5.3.2"
   checksum: f9f652c957983634ded1e7f02da3b559a0d4cc210fca3792cb67f1b153623c9c42efdc1c4121af171e295444459fc4a9201101fb041b1104a3c000bccb188337
+  languageName: node
+  linkType: hard
+
+"image-size@npm:^2.0.2":
+  version: 2.0.2
+  resolution: "image-size@npm:2.0.2"
+  bin:
+    image-size: bin/image-size.js
+  checksum: f09dd0f7cf8511cd20e4f756bdb5a7cb6d2240de3323f41bde266bed8373392a293892bf12e907e2995f52833fd88dd27cf6b1a52ab93968afc716cb78cd7b79
   languageName: node
   linkType: hard
 

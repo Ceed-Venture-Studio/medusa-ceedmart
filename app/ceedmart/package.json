@@ -30,7 +30,8 @@
     "@medusajs/notification-pulse-sms": "workspace:*",
     "@medusajs/payment": "workspace:*",
     "@medusajs/payment-pulse-pay": "workspace:*",
-    "@medusajs/workflow-engine-redis": "workspace:*"
+    "@medusajs/workflow-engine-redis": "workspace:*",
+    "image-size": "^2.0.2"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

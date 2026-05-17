@@ -104,6 +104,11 @@ const fileProvider = process.env.S3_BUCKET
       },
     }
 
+// Banner storage targets a separate GCS bucket (banner_ads in prod,
+// banner_ads_dev locally) but the Medusa file module only supports one
+// provider at a time. The banner upload route writes directly via the
+// AWS S3 SDK using BANNERS_S3_* env vars — see src/lib/banner/upload.ts.
+
 // Redis-backed modules — required for multi-instance / non-shared worker deployments.
 const redisModules: Record<string, any> = redisUrl
   ? {
@@ -236,6 +241,9 @@ export default defineConfig({
     },
     solar: {
       resolve: "./src/modules/solar",
+    },
+    banner: {
+      resolve: "./src/modules/banner",
     },
   },
 })

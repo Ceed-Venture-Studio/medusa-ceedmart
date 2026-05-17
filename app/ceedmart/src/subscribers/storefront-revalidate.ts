@@ -49,6 +49,11 @@ const EVENT_TAG_MAP: Record<string, string[]> = {
   "region.created": ["regions", "products"],
   "region.updated": ["regions", "products"],
   "region.deleted": ["regions", "products"],
+
+  // Banners
+  "banner.created": ["banners"],
+  "banner.updated": ["banners"],
+  "banner.deleted": ["banners"],
 }
 
 export default async function storefrontRevalidate({
