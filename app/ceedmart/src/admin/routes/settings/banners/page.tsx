@@ -16,6 +16,7 @@ import {
   toast,
 } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
+import { fetchAdmin } from "../../../lib/client"
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -56,12 +57,8 @@ const PAGE_SIZE = 20
 const STATUSES: Banner["status"][] = ["draft", "active", "archived"]
 
 const fetchJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
-  const res = await fetch(url, { credentials: "include", ...init })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.message || `${res.status} ${res.statusText}`)
-  }
-  return res.json() as Promise<T>
+  // FormData (banner uploads) — fetchAdmin handles both JSON and binary bodies.
+  return (await fetchAdmin<T>(url, init)) as Awaited<T>
 }
 
 const relative = (iso: string) => {

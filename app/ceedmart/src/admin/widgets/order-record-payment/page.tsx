@@ -9,6 +9,7 @@ import {
   toast,
 } from "@medusajs/ui"
 import { useMemo, useState } from "react"
+import { fetchAdmin } from "../../lib/client"
 
 // Record Payment widget on the order detail page sidebar.
 //
@@ -47,16 +48,11 @@ const OrderRecordPaymentWidget = ({ data: order }: DetailWidgetProps<AdminOrder>
     if (disabled) return
     setSubmitting(true)
     try {
-      const res = await fetch(`/admin/orders/${order.id}/record-payment`, {
+      await fetchAdmin(`/admin/orders/${order.id}/record-payment`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider_id: providerId }),
       })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body?.message ?? `Request failed: ${res.status}`)
-      }
       const label =
         RECONCILIATION_METHODS.find((m) => m.id === providerId)?.label ?? providerId
       toast.success(`Payment recorded as ${label}`)

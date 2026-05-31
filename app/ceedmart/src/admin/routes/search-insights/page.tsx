@@ -10,6 +10,7 @@ import {
   Text,
 } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
+import { fetchAdmin } from "../../lib/client"
 
 type Metrics = {
   window_days: number
@@ -49,11 +50,7 @@ const WINDOWS = [
 
 const PAGE_SIZE = 20
 
-const fetchJson = async <T,>(url: string): Promise<T> => {
-  const res = await fetch(url, { credentials: "include" })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json() as Promise<T>
-}
+const fetchJson = fetchAdmin
 
 const percent = (n: number) => `${(n * 100).toFixed(1)}%`
 

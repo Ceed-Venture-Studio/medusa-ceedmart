@@ -15,6 +15,7 @@ import {
   toast,
 } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
+import { fetchAdmin } from "../../lib/client"
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -100,11 +101,7 @@ const PAGE_SIZE = 20
 const STATUSES: Quote["status"][] = ["new", "contacted", "quoted", "won", "lost"]
 const TIERS: SolarBundle["tier"][] = ["budget", "recommended", "premium"]
 
-const fetchJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
-  const res = await fetch(url, { credentials: "include", ...init })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json() as Promise<T>
-}
+const fetchJson = fetchAdmin
 
 const formatRelative = (iso: string) => {
   const d = new Date(iso)
