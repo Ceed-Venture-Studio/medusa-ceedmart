@@ -31,6 +31,11 @@
     "@medusajs/payment": "workspace:*",
     "@medusajs/payment-pulse-pay": "workspace:*",
     "@medusajs/workflow-engine-redis": "workspace:*",
+    "@tiptap/extension-link": "^2.10.3",
+    "@tiptap/extension-placeholder": "^2.10.3",
+    "@tiptap/extension-underline": "^2.10.3",
+    "@tiptap/react": "^2.10.3",
+    "@tiptap/starter-kit": "^2.10.3",
     "image-size": "^2.0.2"
   },
   "devDependencies": {

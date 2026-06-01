@@ -257,6 +257,9 @@ export default defineConfig({
     banner: {
       resolve: "./src/modules/banner",
     },
+    careers: {
+      resolve: "./src/modules/careers",
+    },
   },
 })
 
