@@ -62,25 +62,28 @@ type EditorProps = {
   onSaved: () => void
 }
 
-const RequisitionEditor = ({ mode, onClose, onSaved }: EditorProps) => {
-  const isEdit = mode?.mode === "edit"
-  const initial = mode?.mode === "edit" ? mode.requisition : null
+// Inner form lives in its own component so we can `key` it on the
+// requisition id (or "new"). Each open of the drawer mounts a fresh
+// instance with state seeded directly from props — no useEffect race
+// where the editor mounts with stale "" before useEffect catches up,
+// and TipTap's initial content is correct on first render.
+type FormProps = {
+  initial: Requisition | null
+  onCancel: () => void
+  onSaved: () => void
+  onClose: () => void
+}
 
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [applyUrl, setApplyUrl] = useState("")
-  const [salary, setSalary] = useState("")
-  const [status, setStatus] = useState<"open" | "closed">("open")
+const EditorForm = ({ initial, onCancel, onSaved, onClose }: FormProps) => {
+  const isEdit = initial !== null
+  const [title, setTitle] = useState(initial?.title ?? "")
+  const [description, setDescription] = useState(initial?.description ?? "")
+  const [applyUrl, setApplyUrl] = useState(initial?.apply_url ?? "")
+  const [salary, setSalary] = useState(initial?.salary ?? "")
+  const [status, setStatus] = useState<"open" | "closed">(
+    initial?.status ?? "open"
+  )
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (mode === null) return
-    setTitle(initial?.title ?? "")
-    setDescription(initial?.description ?? "")
-    setApplyUrl(initial?.apply_url ?? "")
-    setSalary(initial?.salary ?? "")
-    setStatus(initial?.status ?? "open")
-  }, [mode, initial])
 
   const handleSave = async () => {
     if (!title.trim() || !description.trim() || !applyUrl.trim()) {
@@ -121,83 +124,110 @@ const RequisitionEditor = ({ mode, onClose, onSaved }: EditorProps) => {
   }
 
   return (
+    <>
+      <Drawer.Header>
+        <Drawer.Title>
+          {isEdit ? "Edit requisition" : "New requisition"}
+        </Drawer.Title>
+      </Drawer.Header>
+      <Drawer.Body className="flex flex-col gap-4 overflow-y-auto">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="title">Role title *</Label>
+          <Input
+            id="title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Senior Solar Sales Engineer"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="apply_url">Application link *</Label>
+          <Input
+            id="apply_url"
+            type="url"
+            value={applyUrl}
+            onChange={(e) => setApplyUrl(e.target.value)}
+            placeholder="https://forms.gle/..."
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="salary">Salary (optional)</Label>
+          <Input
+            id="salary"
+            value={salary}
+            onChange={(e) => setSalary(e.target.value)}
+            placeholder="₦400k – ₦600k / month"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="status">Status</Label>
+          <Select
+            value={status}
+            onValueChange={(v) => setStatus(v as "open" | "closed")}
+          >
+            <Select.Trigger id="status">
+              <Select.Value />
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value="open">Open</Select.Item>
+              <Select.Item value="closed">Closed</Select.Item>
+            </Select.Content>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="description">Description *</Label>
+          <Text size="small" className="text-ui-fg-subtle">
+            Headings, bold, lists, and links are rendered on the public
+            careers page.
+          </Text>
+          <RichTextEditor
+            id="description"
+            value={description}
+            onChange={setDescription}
+            placeholder="Describe the role, responsibilities, and ideal candidate…"
+          />
+        </div>
+      </Drawer.Body>
+      <Drawer.Footer>
+        <Button variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={handleSave} isLoading={saving}>
+          {isEdit ? "Save changes" : "Create"}
+        </Button>
+      </Drawer.Footer>
+    </>
+  )
+}
+
+const RequisitionEditor = ({ mode, onClose, onSaved }: EditorProps) => {
+  const initial = mode?.mode === "edit" ? mode.requisition : null
+  // Force a remount each time the drawer transitions to a new instance.
+  // Without this, the inputs and TipTap editor reuse stale internal state
+  // (TipTap especially — its first-mount content is sticky, so editing role
+  // B after role A would still show A's description until you typed).
+  const formKey = mode === null
+    ? "closed"
+    : mode.mode === "edit"
+      ? `edit-${mode.requisition.id}`
+      : "new"
+
+  return (
     <Drawer open={mode !== null} onOpenChange={(open) => !open && onClose()}>
       <Drawer.Content>
-        <Drawer.Header>
-          <Drawer.Title>
-            {isEdit ? "Edit requisition" : "New requisition"}
-          </Drawer.Title>
-        </Drawer.Header>
-        <Drawer.Body className="flex flex-col gap-4 overflow-y-auto">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="title">Role title *</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Senior Solar Sales Engineer"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="apply_url">Application link *</Label>
-            <Input
-              id="apply_url"
-              type="url"
-              value={applyUrl}
-              onChange={(e) => setApplyUrl(e.target.value)}
-              placeholder="https://forms.gle/..."
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="salary">Salary (optional)</Label>
-            <Input
-              id="salary"
-              value={salary}
-              onChange={(e) => setSalary(e.target.value)}
-              placeholder="₦400k – ₦600k / month"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="status">Status</Label>
-            <Select
-              value={status}
-              onValueChange={(v) => setStatus(v as "open" | "closed")}
-            >
-              <Select.Trigger id="status">
-                <Select.Value />
-              </Select.Trigger>
-              <Select.Content>
-                <Select.Item value="open">Open</Select.Item>
-                <Select.Item value="closed">Closed</Select.Item>
-              </Select.Content>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="description">Description *</Label>
-            <Text size="small" className="text-ui-fg-subtle">
-              Headings, bold, lists, and links are rendered on the public
-              careers page.
-            </Text>
-            <RichTextEditor
-              id="description"
-              value={description}
-              onChange={setDescription}
-              placeholder="Describe the role, responsibilities, and ideal candidate…"
-            />
-          </div>
-        </Drawer.Body>
-        <Drawer.Footer>
-          <Drawer.Close asChild>
-            <Button variant="secondary">Cancel</Button>
-          </Drawer.Close>
-          <Button onClick={handleSave} isLoading={saving}>
-            {isEdit ? "Save changes" : "Create"}
-          </Button>
-        </Drawer.Footer>
+        {mode !== null && (
+          <EditorForm
+            key={formKey}
+            initial={initial}
+            onCancel={onClose}
+            onClose={onClose}
+            onSaved={onSaved}
+          />
+        )}
       </Drawer.Content>
     </Drawer>
   )
