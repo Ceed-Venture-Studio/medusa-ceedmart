@@ -103,7 +103,58 @@ export const GET = async (
     id: channelProductIds,
   }
   if (since) {
-    filters.updated_at = { $gt: new Date(since) }
+    const sinceDate = new Date(since)
+
+    // Inventory edits only touch inventory_level.updated_at — not the parent
+    // product. Without this, a device that already cached a product with
+    // inventory_quantity=0 (because the stock level didn't exist yet at first
+    // sync) will never receive the corrected number on subsequent incremental
+    // syncs, and the POS will permanently render the variant as out of stock.
+    // We resolve the affected product ids and union them with the normal
+    // updated_at filter.
+    const { data: changedLevels } = await query.graph({
+      entity: "inventory_level",
+      fields: ["inventory_item_id"],
+      filters: { updated_at: { $gt: sinceDate } },
+      pagination: { take: 10_000, skip: 0 },
+    })
+    const changedItemIds = Array.from(
+      new Set((changedLevels as any[]).map((l) => l.inventory_item_id))
+    )
+
+    let inventoryChangedProductIds: string[] = []
+    if (changedItemIds.length) {
+      const { data: variantLinks } = await query.graph({
+        entity: "product_variant_inventory_item",
+        fields: ["variant_id"],
+        filters: { inventory_item_id: changedItemIds },
+        pagination: { take: 10_000, skip: 0 },
+      })
+      const variantIdsForInventory = Array.from(
+        new Set((variantLinks as any[]).map((l) => l.variant_id))
+      )
+      if (variantIdsForInventory.length) {
+        const { data: variantOwners } = await query.graph({
+          entity: "variant",
+          fields: ["product_id"],
+          filters: { id: variantIdsForInventory },
+          pagination: { take: 10_000, skip: 0 },
+        })
+        inventoryChangedProductIds = Array.from(
+          new Set((variantOwners as any[]).map((v) => v.product_id))
+        ).filter((pid) => channelProductIds.includes(pid))
+      }
+    }
+
+    if (inventoryChangedProductIds.length) {
+      filters.$or = [
+        { updated_at: { $gt: sinceDate } },
+        { id: inventoryChangedProductIds },
+      ]
+      delete filters.updated_at
+    } else {
+      filters.updated_at = { $gt: sinceDate }
+    }
   }
 
   // Stable ordering by (updated_at, id) so offset pagination doesn't reshuffle
