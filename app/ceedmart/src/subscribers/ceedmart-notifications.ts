@@ -22,6 +22,48 @@ type NotificationHandler = {
   getSmsBody?: (data: any) => string
 }
 
+// The Pulse Pay notification provider renders the body as plain text inside
+// its own "Dear User / Best Regards, Pulse Pay" template — any HTML we send
+// gets escaped and shown literally to the customer. Keep these bodies as
+// plain text with \n line breaks.
+
+const STOREFRONT_URL =
+  (process.env.STORE_CORS || "https://ceedmart.com").split(",")[0].replace(/\/$/, "")
+// Country code used in storefront URLs (e.g. /ng/order/...). Ceedmart only
+// ships in Nigeria today; if we add markets later this needs to be derived
+// from the order's region.
+const STOREFRONT_COUNTRY = "ng"
+
+const NGN_CURRENCIES = new Set(["ngn", "NGN"])
+const formatMoney = (amount: number | string | null | undefined, currency?: string | null): string => {
+  const n = typeof amount === "number" ? amount : Number(amount ?? 0)
+  if (!Number.isFinite(n)) return "—"
+  const cc = (currency || "").toLowerCase()
+  if (NGN_CURRENCIES.has(cc)) {
+    return `₦${n.toLocaleString("en-NG", { maximumFractionDigits: 2 })}`
+  }
+  if (!cc) return n.toLocaleString()
+  return `${n.toLocaleString()} ${cc.toUpperCase()}`
+}
+
+const orderViewUrl = (orderId: string): string =>
+  `${STOREFRONT_URL}/${STOREFRONT_COUNTRY}/order/${orderId}/confirmed`
+
+const renderItemsList = (items: any[] = [], currency?: string): string => {
+  if (!items.length) return ""
+  return items
+    .map((it: any) => {
+      const qty = it.quantity ?? 1
+      const title = it.product_title || it.title || "Item"
+      const variantBit = it.variant_title && it.variant_title !== it.product_title
+        ? ` (${it.variant_title})`
+        : ""
+      const lineTotal = it.total ?? it.subtotal ?? (qty * (it.unit_price ?? 0))
+      return `  • ${qty} × ${title}${variantBit} — ${formatMoney(lineTotal, currency)}`
+    })
+    .join("\n")
+}
+
 /**
  * Resolves full entity data from an event payload.
  * Events emit either full objects or arrays of { id } references.
@@ -60,14 +102,71 @@ const handlers: NotificationHandler[] = [
     subject: "Your Ceedmart order has been placed!",
     template: "order-placed",
     entity: "order",
-    fields: ["id", "email", "display_id", "shipping_address.*"],
+    fields: [
+      "id",
+      "email",
+      "display_id",
+      "total",
+      "subtotal",
+      "tax_total",
+      "shipping_total",
+      "discount_total",
+      "currency_code",
+      "shipping_address.first_name",
+      "items.id",
+      "items.title",
+      "items.product_title",
+      "items.variant_title",
+      "items.quantity",
+      "items.unit_price",
+      "items.total",
+      "items.subtotal",
+    ],
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Thank you for your order!</h1>
-       <p>Hi ${data.first_name || "there"},</p>
-       <p>Your order <strong>${data.display_id ? "#" + data.display_id : data.id}</strong> has been placed successfully.</p>
-       <p>We'll notify you when it ships.</p>
-       <p>— Ceedmart</p>`,
+    getBody: (data) => {
+      const orderRef = data.display_id ? `#${data.display_id}` : data.id
+      const greeting = data.shipping_address?.first_name || "there"
+      const itemsBlock = renderItemsList(data.items, data.currency_code)
+      const lines: string[] = [
+        `Hi ${greeting},`,
+        ``,
+        `Thank you for your order! Your order ${orderRef} has been placed successfully.`,
+      ]
+
+      if (itemsBlock) {
+        lines.push(``, `Items:`, itemsBlock)
+      }
+
+      const subtotal = data.subtotal
+      const shipping = data.shipping_total
+      const tax = data.tax_total
+      const discount = data.discount_total
+      const total = data.total
+      lines.push(``, `Summary:`)
+      if (subtotal != null) {
+        lines.push(`  Subtotal: ${formatMoney(subtotal, data.currency_code)}`)
+      }
+      if (Number(discount) > 0) {
+        lines.push(`  Discount: -${formatMoney(discount, data.currency_code)}`)
+      }
+      if (Number(shipping) > 0) {
+        lines.push(`  Shipping: ${formatMoney(shipping, data.currency_code)}`)
+      }
+      if (Number(tax) > 0) {
+        lines.push(`  Tax: ${formatMoney(tax, data.currency_code)}`)
+      }
+      lines.push(`  Total: ${formatMoney(total, data.currency_code)}`)
+
+      lines.push(
+        ``,
+        `View your order: ${orderViewUrl(data.id)}`,
+        ``,
+        `We'll notify you when it ships.`,
+        ``,
+        `— Ceedmart`
+      )
+      return lines.join("\n")
+    },
   },
   {
     event: "order.placed",
@@ -88,14 +187,21 @@ const handlers: NotificationHandler[] = [
     subject: "Your Ceedmart order has been canceled",
     template: "order-canceled",
     entity: "order",
-    fields: ["id", "email", "display_id"],
+    fields: ["id", "email", "display_id", "shipping_address.first_name"],
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Order Canceled</h1>
-       <p>Hi ${data.first_name || "there"},</p>
-       <p>Your order <strong>${data.display_id ? "#" + data.display_id : data.id}</strong> has been canceled.</p>
-       <p>If you have questions, please contact our support team.</p>
-       <p>— Ceedmart</p>`,
+    getBody: (data) => {
+      const orderRef = data.display_id ? `#${data.display_id}` : data.id
+      const greeting = data.shipping_address?.first_name || "there"
+      return [
+        `Hi ${greeting},`,
+        ``,
+        `Your order ${orderRef} has been canceled.`,
+        ``,
+        `If you have questions, please contact our support team.`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n")
+    },
   },
 
   // ── Fulfillment Created (order shipped) ──
@@ -105,13 +211,21 @@ const handlers: NotificationHandler[] = [
     subject: "Your Ceedmart order is on its way!",
     template: "order-shipped",
     entity: "order",
-    fields: ["id", "email", "display_id", "shipping_address.*"],
+    fields: ["id", "email", "display_id", "shipping_address.first_name"],
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Your order has shipped!</h1>
-       <p>Hi ${data.first_name || "there"},</p>
-       <p>Your order <strong>${data.display_id ? "#" + data.display_id : data.id}</strong> has been shipped.</p>
-       <p>— Ceedmart</p>`,
+    getBody: (data) => {
+      const orderRef = data.display_id ? `#${data.display_id}` : data.id
+      const greeting = data.shipping_address?.first_name || "there"
+      return [
+        `Hi ${greeting},`,
+        ``,
+        `Good news — your order ${orderRef} has shipped.`,
+        ``,
+        `Track and view: ${orderViewUrl(data.id)}`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n")
+    },
   },
   {
     event: "order.fulfillment_created",
@@ -134,11 +248,17 @@ const handlers: NotificationHandler[] = [
     entity: "order",
     fields: ["id", "email", "display_id"],
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Return Request Received</h1>
-       <p>We've received your return request for order <strong>${data.order?.display_id ? "#" + data.order.display_id : ""}</strong>.</p>
-       <p>We'll process it shortly.</p>
-       <p>— Ceedmart</p>`,
+    getBody: (data) => {
+      const orderRef = data.order?.display_id ? `#${data.order.display_id}` : ""
+      return [
+        `Hi there,`,
+        ``,
+        `We've received your return request for order ${orderRef}.`,
+        `We'll process it shortly and follow up by email.`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n")
+    },
   },
 
   // ── Return Received ──
@@ -150,11 +270,17 @@ const handlers: NotificationHandler[] = [
     entity: "order",
     fields: ["id", "email", "display_id"],
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Return Received</h1>
-       <p>We've received your returned items for order <strong>${data.order?.display_id ? "#" + data.order.display_id : ""}</strong>.</p>
-       <p>Your refund will be processed shortly.</p>
-       <p>— Ceedmart</p>`,
+    getBody: (data) => {
+      const orderRef = data.order?.display_id ? `#${data.order.display_id}` : ""
+      return [
+        `Hi there,`,
+        ``,
+        `We've received your returned items for order ${orderRef}.`,
+        `Your refund will be processed shortly.`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n")
+    },
   },
 
   // ── Payment Captured ──
@@ -164,11 +290,15 @@ const handlers: NotificationHandler[] = [
     subject: "Payment confirmed for your Ceedmart order",
     template: "payment-captured",
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Payment Confirmed</h1>
-       <p>Your payment has been successfully captured.</p>
-       <p>Thank you for shopping with Ceedmart!</p>
-       <p>— Ceedmart</p>`,
+    getBody: () =>
+      [
+        `Hi there,`,
+        ``,
+        `Your payment has been successfully captured.`,
+        `Thank you for shopping with Ceedmart!`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n"),
   },
 
   // ── Payment Refunded ──
@@ -178,10 +308,15 @@ const handlers: NotificationHandler[] = [
     subject: "Your Ceedmart refund has been processed",
     template: "payment-refunded",
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Refund Processed</h1>
-       <p>Your refund has been processed. It may take a few business days to appear in your account.</p>
-       <p>— Ceedmart</p>`,
+    getBody: () =>
+      [
+        `Hi there,`,
+        ``,
+        `Your refund has been processed. It may take a few business days`,
+        `to appear in your account.`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n"),
   },
 
   // ── Customer Created (Welcome) ──
@@ -194,10 +329,14 @@ const handlers: NotificationHandler[] = [
     fields: ["id", "email", "first_name", "last_name", "phone"],
     getTo: (data) => data.email,
     getBody: (data) =>
-      `<h1>Welcome to Ceedmart!</h1>
-       <p>Hi ${data.first_name || "there"},</p>
-       <p>Thank you for creating an account with us. Start shopping now!</p>
-       <p>— Ceedmart</p>`,
+      [
+        `Hi ${data.first_name || "there"},`,
+        ``,
+        `Thank you for creating an account with us. Start shopping now at`,
+        `${STOREFRONT_URL}`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n"),
   },
   {
     event: "customer.created",
@@ -219,11 +358,16 @@ const handlers: NotificationHandler[] = [
     template: "password-reset",
     getTo: (data) => data.entity_id,
     getBody: (data) =>
-      `<h1>Password Reset</h1>
-       <p>You requested to reset your password.</p>
-       <p>Use this token to reset your password: <strong>${data.token}</strong></p>
-       <p>If you didn't request this, please ignore this email.</p>
-       <p>— Ceedmart</p>`,
+      [
+        `Hi there,`,
+        ``,
+        `You requested to reset your password.`,
+        `Use this token to reset it: ${data.token}`,
+        ``,
+        `If you didn't request this, please ignore this email.`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n"),
   },
 
   // ── Invite Created ──
@@ -233,11 +377,15 @@ const handlers: NotificationHandler[] = [
     subject: "You've been invited to Ceedmart",
     template: "invite-created",
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>You've been invited!</h1>
-       <p>You've been invited to join Ceedmart as a team member.</p>
-       <p>Use your invite token to complete registration.</p>
-       <p>— Ceedmart</p>`,
+    getBody: () =>
+      [
+        `Hi there,`,
+        ``,
+        `You've been invited to join Ceedmart as a team member.`,
+        `Use your invite token to complete registration.`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n"),
   },
 
   // ── Order Transfer Requested ──
@@ -249,10 +397,16 @@ const handlers: NotificationHandler[] = [
     entity: "order",
     fields: ["id", "email", "display_id"],
     getTo: (data) => data.email,
-    getBody: (data) =>
-      `<h1>Order Transfer Request</h1>
-       <p>A transfer has been requested for order <strong>${data.display_id ? "#" + data.display_id : data.id}</strong>.</p>
-       <p>— Ceedmart</p>`,
+    getBody: (data) => {
+      const orderRef = data.display_id ? `#${data.display_id}` : data.id
+      return [
+        `Hi there,`,
+        ``,
+        `A transfer has been requested for order ${orderRef}.`,
+        ``,
+        `— Ceedmart`,
+      ].join("\n")
+    },
   },
 ]
 
@@ -313,9 +467,14 @@ export default async function ceedmartNotifications({
         }
 
         if (handler.channel === "email") {
+          // Pulse Pay treats the body as plain text inside its own template;
+          // sending under `text` (with `html` mirroring it) keeps SDK type
+          // happy and works whichever field the provider reads.
+          const body = handler.getBody(entity)
           notificationData.content = {
             subject: handler.subject || handler.template,
-            html: handler.getBody(entity),
+            text: body,
+            html: body,
           }
         } else if (handler.channel === "sms") {
           notificationData.content = {
