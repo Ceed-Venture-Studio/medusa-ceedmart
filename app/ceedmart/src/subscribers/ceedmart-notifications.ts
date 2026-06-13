@@ -34,9 +34,25 @@ const STOREFRONT_URL =
 // from the order's region.
 const STOREFRONT_COUNTRY = "ng"
 
+// Medusa wraps numbers in { value, precision } when the column is BigNumber.
+// Normalise to a plain JS number for arithmetic + formatting.
+const toNumber = (v: unknown): number => {
+  if (typeof v === "number") return v
+  if (typeof v === "string") {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+  if (v && typeof v === "object" && "value" in (v as any)) {
+    const inner = (v as any).value
+    const n = typeof inner === "number" ? inner : Number(inner)
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
+}
+
 const NGN_CURRENCIES = new Set(["ngn", "NGN"])
-const formatMoney = (amount: number | string | null | undefined, currency?: string | null): string => {
-  const n = typeof amount === "number" ? amount : Number(amount ?? 0)
+const formatMoney = (amount: unknown, currency?: string | null): string => {
+  const n = toNumber(amount)
   if (!Number.isFinite(n)) return "—"
   const cc = (currency || "").toLowerCase()
   if (NGN_CURRENCIES.has(cc)) {
@@ -53,16 +69,38 @@ const renderItemsList = (items: any[] = [], currency?: string): string => {
   if (!items.length) return ""
   return items
     .map((it: any) => {
-      const qty = it.quantity ?? 1
+      // OrderItem (the junction with quantity) lives at items[].detail.
+      // items[] itself surfaces OrderLineItem fields (title, unit_price).
+      const qty = toNumber(it.detail?.quantity ?? it.quantity ?? 1) || 1
+      const unitPrice = toNumber(it.unit_price)
       const title = it.product_title || it.title || "Item"
-      const variantBit = it.variant_title && it.variant_title !== it.product_title
-        ? ` (${it.variant_title})`
-        : ""
-      const lineTotal = it.total ?? it.subtotal ?? (qty * (it.unit_price ?? 0))
+      const variantBit =
+        it.variant_title && it.variant_title !== it.product_title
+          ? ` (${it.variant_title})`
+          : ""
+      // items[].total returns 0 in subscriber context (computed only in
+      // the admin REST query layer), so we calculate from raw unit_price.
+      const lineTotal = qty * unitPrice
       return `  • ${qty} × ${title}${variantBit} — ${formatMoney(lineTotal, currency)}`
     })
     .join("\n")
 }
+
+const orderTotal = (data: any): number => {
+  // summary.current_order_total holds the canonical post-edit total once
+  // Medusa's order summary has been populated; in admin REST contexts the
+  // top-level order.total is the same value, but in subscriber context that
+  // top-level field can be stale/zero so we read from summary instead.
+  const fromSummary = toNumber(data.summary?.current_order_total)
+  if (fromSummary > 0) return fromSummary
+  return toNumber(data.total)
+}
+
+const itemsSubtotal = (items: any[] = []): number =>
+  items.reduce((sum, it) => {
+    const qty = toNumber(it.detail?.quantity ?? it.quantity ?? 1) || 1
+    return sum + qty * toNumber(it.unit_price)
+  }, 0)
 
 /**
  * Resolves full entity data from an event payload.
@@ -106,27 +144,25 @@ const handlers: NotificationHandler[] = [
       "id",
       "email",
       "display_id",
-      "total",
-      "subtotal",
-      "tax_total",
-      "shipping_total",
-      "discount_total",
       "currency_code",
+      "summary.*",
       "shipping_address.first_name",
-      "items.id",
+      "*items",
       "items.title",
       "items.product_title",
       "items.variant_title",
-      "items.quantity",
       "items.unit_price",
-      "items.total",
-      "items.subtotal",
+      // items[].detail is the OrderItem junction that carries quantity.
+      "items.detail.quantity",
     ],
     getTo: (data) => data.email,
     getBody: (data) => {
       const orderRef = data.display_id ? `#${data.display_id}` : data.id
       const greeting = data.shipping_address?.first_name || "there"
-      const itemsBlock = renderItemsList(data.items, data.currency_code)
+      const items = data.items ?? []
+      const itemsBlock = renderItemsList(items, data.currency_code)
+      const subtotal = itemsSubtotal(items)
+      const total = orderTotal(data)
       const lines: string[] = [
         `Hi ${greeting},`,
         ``,
@@ -137,23 +173,21 @@ const handlers: NotificationHandler[] = [
         lines.push(``, `Items:`, itemsBlock)
       }
 
-      const subtotal = data.subtotal
-      const shipping = data.shipping_total
-      const tax = data.tax_total
-      const discount = data.discount_total
-      const total = data.total
       lines.push(``, `Summary:`)
-      if (subtotal != null) {
+      if (subtotal > 0) {
         lines.push(`  Subtotal: ${formatMoney(subtotal, data.currency_code)}`)
       }
-      if (Number(discount) > 0) {
-        lines.push(`  Discount: -${formatMoney(discount, data.currency_code)}`)
-      }
-      if (Number(shipping) > 0) {
-        lines.push(`  Shipping: ${formatMoney(shipping, data.currency_code)}`)
-      }
-      if (Number(tax) > 0) {
-        lines.push(`  Tax: ${formatMoney(tax, data.currency_code)}`)
+      // Surface the spread between item subtotal and order total as a
+      // single "Adjustments" line (covers tax, shipping, discount, and any
+      // promotions in one bucket — keeps the email short and avoids the
+      // per-field zero-fallback that a non-populated tax_total exposes).
+      const adjustments = total - subtotal
+      if (Math.abs(adjustments) > 0.01) {
+        const label = adjustments > 0 ? "Tax & shipping" : "Discount"
+        const display = formatMoney(Math.abs(adjustments), data.currency_code)
+        lines.push(
+          `  ${label}: ${adjustments < 0 ? "-" : ""}${display}`
+        )
       }
       lines.push(`  Total: ${formatMoney(total, data.currency_code)}`)
 
