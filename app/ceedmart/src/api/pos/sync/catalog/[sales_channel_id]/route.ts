@@ -146,10 +146,52 @@ export const GET = async (
       }
     }
 
-    if (inventoryChangedProductIds.length) {
+    // Same problem as inventory but for prices: editing a variant's price
+    // changes price.updated_at but not product.updated_at. Devices keep the
+    // old calculated_price in their local cache forever, even on incremental
+    // syncs. Walk the link chain to find affected products.
+    const { data: changedPrices } = await query.graph({
+      entity: "price",
+      fields: ["price_set_id"],
+      filters: { updated_at: { $gt: sinceDate } },
+      pagination: { take: 10_000, skip: 0 },
+    })
+    const changedPriceSetIds = Array.from(
+      new Set((changedPrices as any[]).map((p) => p.price_set_id))
+    )
+
+    let priceChangedProductIds: string[] = []
+    if (changedPriceSetIds.length) {
+      const { data: psLinks } = await query.graph({
+        entity: "product_variant_price_set",
+        fields: ["variant_id"],
+        filters: { price_set_id: changedPriceSetIds },
+        pagination: { take: 10_000, skip: 0 },
+      })
+      const variantIdsForPrice = Array.from(
+        new Set((psLinks as any[]).map((l) => l.variant_id))
+      )
+      if (variantIdsForPrice.length) {
+        const { data: variantOwners } = await query.graph({
+          entity: "variant",
+          fields: ["product_id"],
+          filters: { id: variantIdsForPrice },
+          pagination: { take: 10_000, skip: 0 },
+        })
+        priceChangedProductIds = Array.from(
+          new Set((variantOwners as any[]).map((v) => v.product_id))
+        ).filter((pid) => channelProductIds.includes(pid))
+      }
+    }
+
+    const extraProductIds = Array.from(
+      new Set([...inventoryChangedProductIds, ...priceChangedProductIds])
+    )
+
+    if (extraProductIds.length) {
       filters.$or = [
         { updated_at: { $gt: sinceDate } },
-        { id: inventoryChangedProductIds },
+        { id: extraProductIds },
       ]
       delete filters.updated_at
     } else {
