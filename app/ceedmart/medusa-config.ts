@@ -260,6 +260,22 @@ export default defineConfig({
     careers: {
       resolve: "./src/modules/careers",
     },
+    ceedmart_tax: {
+      resolve: "./src/modules/ceedmart-tax",
+    },
+    // Custom tax provider that reads Ceedmart tax overrides. Register via
+    // Modules.TAX so it's selectable from Settings → Tax Regions.
+    [Modules.TAX]: {
+      resolve: "@medusajs/tax",
+      options: {
+        providers: [
+          {
+            resolve: "./src/modules/ceedmart-tax/provider",
+            id: "ceedmart",
+          },
+        ],
+      },
+    },
   },
 })
 
