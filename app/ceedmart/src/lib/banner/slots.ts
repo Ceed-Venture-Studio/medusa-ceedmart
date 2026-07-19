@@ -61,6 +61,15 @@ export const BANNER_SLOTS: BannerSlot[] = [
     min_height: 800,
     description: "Sidebar of the product detail page. Portrait orientation.",
   },
+  {
+    key: "category_carousel",
+    label: "Category Promo Carousel",
+    aspect_ratio: 4,
+    min_width: 1200,
+    min_height: 300,
+    description:
+      "Site-wide promotional carousel shown above content on all pages except home. Rotates through active banners; supports headline, subheadline, up to two CTAs, and custom colors.",
+  },
 ]
 
 const slotsByKey = new Map<string, BannerSlot>(

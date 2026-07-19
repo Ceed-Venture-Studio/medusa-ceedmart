@@ -53,6 +53,13 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     image_width: b.image_width,
     image_height: b.image_height,
     link_url: b.link_url,
+    cta_1_label: b.cta_1_label,
+    cta_2_url: b.cta_2_url,
+    cta_2_label: b.cta_2_label,
+    headline: b.headline,
+    subheadline: b.subheadline,
+    primary_color: b.primary_color,
+    secondary_color: b.secondary_color,
     alt_text: b.alt_text,
     priority: b.priority,
   }))
