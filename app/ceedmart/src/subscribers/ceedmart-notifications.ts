@@ -65,6 +65,15 @@ const formatMoney = (amount: unknown, currency?: string | null): string => {
 const orderViewUrl = (orderId: string): string =>
   `${STOREFRONT_URL}/${STOREFRONT_COUNTRY}/order/${orderId}/confirmed`
 
+// Persistent bookmark-friendly URL — customer types display_id + contact
+// on the tracking page. Unlike orderViewUrl this can be shared / revisited
+// without needing the exact order UUID, and it survives session state loss.
+const trackUrl = (displayId: number | string | undefined | null): string => {
+  const ref = displayId != null ? String(displayId) : ""
+  const q = ref ? `?ref=${encodeURIComponent(ref)}` : ""
+  return `${STOREFRONT_URL}/${STOREFRONT_COUNTRY}/track${q}`
+}
+
 const renderItemsList = (items: any[] = [], currency?: string): string => {
   if (!items.length) return ""
   return items
@@ -194,6 +203,7 @@ const handlers: NotificationHandler[] = [
       lines.push(
         ``,
         `View your order: ${orderViewUrl(data.id)}`,
+        `Track anytime: ${trackUrl(data.display_id)}`,
         ``,
         `We'll notify you when it ships.`,
         ``,
