@@ -39,6 +39,13 @@ type Banner = {
   image_height: number
   image_mime_type: string
   link_url: string | null
+  cta_1_label: string | null
+  cta_2_url: string | null
+  cta_2_label: string | null
+  headline: string | null
+  subheadline: string | null
+  primary_color: string | null
+  secondary_color: string | null
   alt_text: string | null
   starts_at: string | null
   ends_at: string | null
@@ -94,6 +101,13 @@ const BannerEditor = ({
   const [name, setName] = useState(editing?.name ?? "")
   const [slot, setSlot] = useState(editing?.slot ?? slots[0]?.key ?? "")
   const [linkUrl, setLinkUrl] = useState(editing?.link_url ?? "")
+  const [cta1Label, setCta1Label] = useState(editing?.cta_1_label ?? "")
+  const [cta2Url, setCta2Url] = useState(editing?.cta_2_url ?? "")
+  const [cta2Label, setCta2Label] = useState(editing?.cta_2_label ?? "")
+  const [headline, setHeadline] = useState(editing?.headline ?? "")
+  const [subheadline, setSubheadline] = useState(editing?.subheadline ?? "")
+  const [primaryColor, setPrimaryColor] = useState(editing?.primary_color ?? "#05007F")
+  const [secondaryColor, setSecondaryColor] = useState(editing?.secondary_color ?? "#FFFFFF")
   const [altText, setAltText] = useState(editing?.alt_text ?? "")
   const [startsAt, setStartsAt] = useState(editing?.starts_at?.slice(0, 16) ?? "")
   const [endsAt, setEndsAt] = useState(editing?.ends_at?.slice(0, 16) ?? "")
@@ -116,12 +130,19 @@ const BannerEditor = ({
     if (mode.kind === "edit") {
       const b = mode.banner
       setName(b.name); setSlot(b.slot); setLinkUrl(b.link_url ?? "")
+      setCta1Label(b.cta_1_label ?? ""); setCta2Url(b.cta_2_url ?? "")
+      setCta2Label(b.cta_2_label ?? ""); setHeadline(b.headline ?? "")
+      setSubheadline(b.subheadline ?? "")
+      setPrimaryColor(b.primary_color ?? "#05007F")
+      setSecondaryColor(b.secondary_color ?? "#FFFFFF")
       setAltText(b.alt_text ?? ""); setStartsAt(b.starts_at?.slice(0, 16) ?? "")
       setEndsAt(b.ends_at?.slice(0, 16) ?? ""); setPriority(b.priority)
       setStatus(b.status); setImageUrl(b.image_url); setImageKey(b.image_key ?? "")
       setImageWidth(b.image_width); setImageHeight(b.image_height); setImageMime(b.image_mime_type)
     } else {
       setName(""); setSlot(slots[0]?.key ?? ""); setLinkUrl(""); setAltText("")
+      setCta1Label(""); setCta2Url(""); setCta2Label(""); setHeadline("")
+      setSubheadline(""); setPrimaryColor("#05007F"); setSecondaryColor("#FFFFFF")
       setStartsAt(""); setEndsAt(""); setPriority(0); setStatus("draft")
       setImageUrl(""); setImageKey(""); setImageWidth(0); setImageHeight(0); setImageMime("")
     }
@@ -156,6 +177,15 @@ const BannerEditor = ({
     if (!imageUrl) { toast.error("Upload an image first"); return }
     setSaving(true)
     try {
+      const overlayFields = {
+        headline: headline || null,
+        subheadline: subheadline || null,
+        primary_color: primaryColor || null,
+        secondary_color: secondaryColor || null,
+        cta_1_label: cta1Label || null,
+        cta_2_url: cta2Url || null,
+        cta_2_label: cta2Label || null,
+      }
       if (editing) {
         await fetchJson<{ banner: Banner }>(`/admin/banners/${editing.id}`, {
           method: "PATCH",
@@ -164,6 +194,7 @@ const BannerEditor = ({
             name, slot, link_url: linkUrl || null, alt_text: altText || null,
             starts_at: startsAt || null, ends_at: endsAt || null,
             priority, status,
+            ...overlayFields,
           }),
         })
         toast.success("Banner updated")
@@ -177,6 +208,7 @@ const BannerEditor = ({
             link_url: linkUrl || null, alt_text: altText || null,
             starts_at: startsAt || null, ends_at: endsAt || null,
             priority, status,
+            ...overlayFields,
           }),
         })
         toast.success("Banner created")
@@ -247,14 +279,83 @@ const BannerEditor = ({
             {uploading && <Text size="xsmall" className="text-ui-fg-muted">Uploading and validating…</Text>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Alt text</Label>
+            <Input value={altText} onChange={(e) => setAltText(e.target.value)} />
+          </div>
+
+          <div className="rounded-lg border border-ui-border-base bg-ui-bg-subtle p-3 flex flex-col gap-3">
+            <Text size="small" weight="plus">Carousel overlay (headline, colors, CTAs)</Text>
+            <Text size="xsmall" className="text-ui-fg-muted">
+              Used by the site-wide promo carousel. Leave blank for image-only banners.
+            </Text>
+
             <div>
-              <Label>Link URL (optional)</Label>
-              <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://…" />
+              <Label>Headline</Label>
+              <Input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="Power up your home or business" />
             </div>
             <div>
-              <Label>Alt text</Label>
-              <Input value={altText} onChange={(e) => setAltText(e.target.value)} />
+              <Label>Subheadline</Label>
+              <Textarea value={subheadline} onChange={(e) => setSubheadline(e.target.value)} rows={2} placeholder="Solar systems and CCTV kit at great prices." />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Primary color (background)</Label>
+                <div className="flex items-center gap-2">
+                  <Input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-9 w-14 p-1" />
+                  <Input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} placeholder="#05007F" />
+                </div>
+              </div>
+              <div>
+                <Label>Secondary color (text)</Label>
+                <div className="flex items-center gap-2">
+                  <Input type="color" value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} className="h-9 w-14 p-1" />
+                  <Input value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} placeholder="#FFFFFF" />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>CTA 1 label</Label>
+                <Input value={cta1Label} onChange={(e) => setCta1Label(e.target.value)} placeholder="Shop now" />
+              </div>
+              <div>
+                <Label>CTA 1 URL</Label>
+                <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="/collections/solar" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>CTA 2 label (optional)</Label>
+                <Input value={cta2Label} onChange={(e) => setCta2Label(e.target.value)} placeholder="Learn more" />
+              </div>
+              <div>
+                <Label>CTA 2 URL (optional)</Label>
+                <Input value={cta2Url} onChange={(e) => setCta2Url(e.target.value)} placeholder="/solar" />
+              </div>
+            </div>
+
+            <div
+              className="rounded-md p-4 flex items-center gap-3 text-sm mt-1"
+              style={{ backgroundColor: primaryColor, color: secondaryColor }}
+            >
+              <div className="flex-1">
+                <div className="font-semibold">{headline || "Headline preview"}</div>
+                <div className="opacity-80 text-xs">{subheadline || "Subheadline preview"}</div>
+              </div>
+              {cta1Label && (
+                <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ backgroundColor: secondaryColor, color: primaryColor }}>
+                  {cta1Label}
+                </span>
+              )}
+              {cta2Label && (
+                <span className="rounded-full px-3 py-1 text-xs font-semibold border" style={{ borderColor: secondaryColor, color: secondaryColor }}>
+                  {cta2Label}
+                </span>
+              )}
             </div>
           </div>
 

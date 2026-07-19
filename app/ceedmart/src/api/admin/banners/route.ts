@@ -12,6 +12,13 @@ type CreateBody = {
   image_height: number
   image_mime_type: string
   link_url?: string | null
+  cta_1_label?: string | null
+  cta_2_url?: string | null
+  cta_2_label?: string | null
+  headline?: string | null
+  subheadline?: string | null
+  primary_color?: string | null
+  secondary_color?: string | null
   alt_text?: string | null
   starts_at?: string | null
   ends_at?: string | null
@@ -67,6 +74,13 @@ export const POST = async (req: AuthenticatedMedusaRequest<CreateBody>, res: Med
     image_height: body.image_height,
     image_mime_type: body.image_mime_type,
     link_url: body.link_url?.trim() || null,
+    cta_1_label: body.cta_1_label?.trim() || null,
+    cta_2_url: body.cta_2_url?.trim() || null,
+    cta_2_label: body.cta_2_label?.trim() || null,
+    headline: body.headline?.trim() || null,
+    subheadline: body.subheadline?.trim() || null,
+    primary_color: body.primary_color?.trim() || null,
+    secondary_color: body.secondary_color?.trim() || null,
     alt_text: body.alt_text?.trim() || null,
     starts_at: body.starts_at ? new Date(body.starts_at) : null,
     ends_at: body.ends_at ? new Date(body.ends_at) : null,
