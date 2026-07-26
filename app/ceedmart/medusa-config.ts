@@ -263,6 +263,12 @@ export default defineConfig({
     stock_transfer: {
       resolve: "./src/modules/stock-transfer",
     },
+    partner: {
+      resolve: "./src/modules/partner",
+    },
+    commission_entry: {
+      resolve: "./src/modules/commission-entry",
+    },
     ceedmart_tax: {
       resolve: "./src/modules/ceedmart-tax",
     },
