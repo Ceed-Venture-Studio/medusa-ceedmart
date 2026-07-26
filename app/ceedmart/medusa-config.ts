@@ -260,6 +260,9 @@ export default defineConfig({
     careers: {
       resolve: "./src/modules/careers",
     },
+    stock_transfer: {
+      resolve: "./src/modules/stock-transfer",
+    },
     ceedmart_tax: {
       resolve: "./src/modules/ceedmart-tax",
     },
