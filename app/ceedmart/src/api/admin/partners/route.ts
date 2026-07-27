@@ -1,6 +1,12 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import { PARTNER_MODULE } from "../../../modules/partner"
+import {
+  DEFAULT_TIER,
+  isValidTier,
+  rateForTier,
+  PartnerTierCode,
+} from "../../../lib/partner-commissions/tiers"
 
 // Excludes visually ambiguous chars (0/O, 1/I/L) for hand-typed use.
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -28,7 +34,7 @@ type CreateBody = {
   phone?: string | null
   company?: string | null
   code?: string | null            // optional — otherwise auto-generated
-  commission_rate?: number | null // decimal like 0.07
+  tier?: PartnerTierCode          // SHOPPER (default) / EMPLOYEE_SALES / RESELLER / PARTNER
   status?: "active" | "inactive" | "suspended"
   notes?: string | null
 }
@@ -76,10 +82,9 @@ export const POST = async (req: AuthenticatedMedusaRequest<CreateBody>, res: Med
     code = await nextUniqueCode(svc)
   }
 
-  const rate =
-    body.commission_rate === undefined || body.commission_rate === null
-      ? 0.07
-      : Math.max(0, Math.min(1, Number(body.commission_rate) || 0))
+  const tier: PartnerTierCode =
+    body.tier && isValidTier(body.tier) ? body.tier : DEFAULT_TIER
+  const rate = rateForTier(tier)
 
   const partner = await svc.createPartners({
     name: body.name.trim(),
@@ -87,6 +92,7 @@ export const POST = async (req: AuthenticatedMedusaRequest<CreateBody>, res: Med
     phone: body.phone?.trim() || null,
     company: body.company?.trim() || null,
     code,
+    tier,
     commission_rate: rate,
     status: body.status ?? "active",
     notes: body.notes?.trim() || null,
