@@ -19,10 +19,15 @@ const Partner = model
     // metadata.ceedmart.partner_code.
     code: model.text().unique(),
 
-    // Per-partner override for the spec's 7% partner rate. Stored as a
-    // decimal (e.g. 0.07). Frozen onto each commission_entry at accrual
-    // time so future rate changes never rewrite history.
-    commission_rate: model.number().default(0.07),
+    // Program tier from the Ceedmart incentive spec. Drives the default
+    // commission_rate — see lib/partner-commissions/tiers.ts.
+    // Values: SHOPPER (default), EMPLOYEE_SALES, RESELLER, PARTNER.
+    tier: model.text().default("SHOPPER"),
+
+    // Rate derived from tier at create/update time. Stored so it's
+    // frozen onto each commission_entry at accrual time and future
+    // spec/tier-rate changes never rewrite history.
+    commission_rate: model.number().default(0.02),
 
     // Status lifecycle. MVP does NOT automate 3-strike inactivation
     // (spec §9.8) — admins flip this manually until the automation lands.

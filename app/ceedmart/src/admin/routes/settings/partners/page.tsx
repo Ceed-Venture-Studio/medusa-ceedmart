@@ -19,6 +19,15 @@ import { Link } from "react-router-dom"
 import { useEffect, useState } from "react"
 import { fetchAdmin } from "../../../lib/client"
 
+type TierCode = "SHOPPER" | "EMPLOYEE_SALES" | "RESELLER" | "PARTNER"
+
+type Tier = {
+  code: TierCode
+  label: string
+  rate: number
+  description: string
+}
+
 type Partner = {
   id: string
   name: string
@@ -26,6 +35,7 @@ type Partner = {
   phone: string | null
   company: string | null
   code: string
+  tier: TierCode
   commission_rate: number
   status: "active" | "inactive" | "suspended"
   notes: string | null
@@ -34,6 +44,7 @@ type Partner = {
 }
 
 type ListResp = { partners: Partner[]; count: number; limit: number; offset: number }
+type TiersResp = { tiers: Tier[]; default: TierCode }
 
 const PAGE_SIZE = 25
 const STATUSES: Partner["status"][] = ["active", "inactive", "suspended"]
@@ -56,10 +67,14 @@ type EditorMode = { kind: "create" } | { kind: "edit"; partner: Partner } | null
 
 const PartnerEditor = ({
   mode,
+  tiers,
+  defaultTier,
   onClose,
   onSaved,
 }: {
   mode: EditorMode
+  tiers: Tier[]
+  defaultTier: TierCode
   onClose: () => void
   onSaved: () => void
 }) => {
@@ -69,12 +84,12 @@ const PartnerEditor = ({
   const [email, setEmail] = useState(editing?.email ?? "")
   const [phone, setPhone] = useState(editing?.phone ?? "")
   const [company, setCompany] = useState(editing?.company ?? "")
-  const [ratePct, setRatePct] = useState(
-    editing ? String(Math.round((editing.commission_rate ?? 0.07) * 10000) / 100) : "7"
-  )
+  const [tier, setTier] = useState<TierCode>(editing?.tier ?? defaultTier)
   const [status, setStatus] = useState<Partner["status"]>(editing?.status ?? "active")
   const [notes, setNotes] = useState(editing?.notes ?? "")
   const [saving, setSaving] = useState(false)
+
+  const currentTier = tiers.find((t) => t.code === tier)
 
   useEffect(() => {
     if (!mode) return
@@ -82,26 +97,25 @@ const PartnerEditor = ({
       const p = mode.partner
       setName(p.name); setCode(p.code); setEmail(p.email ?? "")
       setPhone(p.phone ?? ""); setCompany(p.company ?? "")
-      setRatePct(String(Math.round((p.commission_rate ?? 0.07) * 10000) / 100))
+      setTier(p.tier ?? defaultTier)
       setStatus(p.status); setNotes(p.notes ?? "")
     } else {
       setName(""); setCode(""); setEmail(""); setPhone(""); setCompany("")
-      setRatePct("7"); setStatus("active"); setNotes("")
+      setTier(defaultTier); setStatus("active"); setNotes("")
     }
-  }, [mode])
+  }, [mode, defaultTier])
 
   const save = async () => {
     if (!name.trim()) { toast.error("Name is required"); return }
     setSaving(true)
     try {
-      const rate = Math.max(0, Math.min(100, Number(ratePct) || 0)) / 100
       if (editing) {
         await fetchAdmin<{ partner: Partner }>(`/admin/partners/${editing.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name, email: email || null, phone: phone || null,
-            company: company || null, commission_rate: rate,
+            company: company || null, tier,
             status, notes: notes || null,
           }),
         })
@@ -114,7 +128,7 @@ const PartnerEditor = ({
             name, email: email || null, phone: phone || null,
             company: company || null,
             code: code.trim() ? code.trim().toUpperCase() : undefined,
-            commission_rate: rate, status, notes: notes || null,
+            tier, status, notes: notes || null,
           }),
         })
         toast.success("Partner created")
@@ -156,18 +170,22 @@ const PartnerEditor = ({
               </Text>
             </div>
             <div>
-              <Label>Commission rate (%)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                max={100}
-                value={ratePct}
-                onChange={(e) => setRatePct(e.target.value)}
-              />
-              <Text size="xsmall" className="text-ui-fg-muted mt-1">
-                Spec default is 7% for Partner tier.
-              </Text>
+              <Label>Tier</Label>
+              <Select value={tier} onValueChange={(v) => setTier(v as TierCode)}>
+                <Select.Trigger><Select.Value /></Select.Trigger>
+                <Select.Content>
+                  {tiers.map((t) => (
+                    <Select.Item key={t.code} value={t.code}>
+                      {t.label} — {(t.rate * 100).toFixed(2)}%
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select>
+              {currentTier && (
+                <Text size="xsmall" className="text-ui-fg-muted mt-1">
+                  {currentTier.description}
+                </Text>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -215,6 +233,8 @@ const PartnerEditor = ({
 
 const PartnersPage = () => {
   const [list, setList] = useState<ListResp | null>(null)
+  const [tiers, setTiers] = useState<Tier[]>([])
+  const [defaultTier, setDefaultTier] = useState<TierCode>("SHOPPER")
   const [loading, setLoading] = useState(false)
   const [q, setQ] = useState("")
   const [debouncedQ, setDebouncedQ] = useState("")
@@ -222,6 +242,12 @@ const PartnersPage = () => {
   const [offset, setOffset] = useState(0)
   const [editor, setEditor] = useState<EditorMode>(null)
   const [refreshTick, setRefreshTick] = useState(0)
+
+  useEffect(() => {
+    fetchAdmin<TiersResp>("/admin/partners/tiers")
+      .then((r) => { setTiers(r.tiers); setDefaultTier(r.default) })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q.trim()), 250)
@@ -279,6 +305,7 @@ const PartnersPage = () => {
             <Table.Row>
               <Table.HeaderCell>Name</Table.HeaderCell>
               <Table.HeaderCell>Code</Table.HeaderCell>
+              <Table.HeaderCell>Tier</Table.HeaderCell>
               <Table.HeaderCell>Rate</Table.HeaderCell>
               <Table.HeaderCell>Status</Table.HeaderCell>
               <Table.HeaderCell>Contact</Table.HeaderCell>
@@ -299,6 +326,11 @@ const PartnersPage = () => {
                     {p.company && <Text size="xsmall" className="text-ui-fg-muted">{p.company}</Text>}
                   </Table.Cell>
                   <Table.Cell><Badge size="2xsmall">{p.code}</Badge></Table.Cell>
+                  <Table.Cell>
+                    <Text size="small">
+                      {tiers.find((t) => t.code === p.tier)?.label ?? p.tier}
+                    </Text>
+                  </Table.Cell>
                   <Table.Cell><Text size="small">{(p.commission_rate * 100).toFixed(2)}%</Text></Table.Cell>
                   <Table.Cell><StatusBadge color={statusColor(p.status)}>{p.status}</StatusBadge></Table.Cell>
                   <Table.Cell>
@@ -331,6 +363,8 @@ const PartnersPage = () => {
 
       <PartnerEditor
         mode={editor}
+        tiers={tiers}
+        defaultTier={defaultTier}
         onClose={() => setEditor(null)}
         onSaved={() => setRefreshTick((n) => n + 1)}
       />

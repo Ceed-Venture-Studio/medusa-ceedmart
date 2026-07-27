@@ -12,6 +12,15 @@ import { Link, useParams } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
 import { fetchAdmin } from "../../../../lib/client"
 
+type TierCode = "SHOPPER" | "EMPLOYEE_SALES" | "RESELLER" | "PARTNER"
+
+const TIER_LABELS: Record<TierCode, string> = {
+  SHOPPER: "Shopper",
+  EMPLOYEE_SALES: "Employee Sales",
+  RESELLER: "Reseller",
+  PARTNER: "Partner",
+}
+
 type Partner = {
   id: string
   name: string
@@ -19,6 +28,7 @@ type Partner = {
   phone: string | null
   company: string | null
   code: string
+  tier: TierCode
   commission_rate: number
   status: "active" | "inactive" | "suspended"
   notes: string | null
@@ -137,7 +147,7 @@ const PartnerDetail = () => {
           </div>
           {partner && (
             <Text size="small" className="text-ui-fg-muted mt-1">
-              Rate {(partner.commission_rate * 100).toFixed(2)}%
+              {TIER_LABELS[partner.tier] ?? partner.tier} · Rate {(partner.commission_rate * 100).toFixed(2)}%
               {partner.email ? ` · ${partner.email}` : ""}
               {partner.phone ? ` · ${partner.phone}` : ""}
             </Text>

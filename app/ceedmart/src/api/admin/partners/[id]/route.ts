@@ -1,13 +1,18 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import { PARTNER_MODULE } from "../../../../modules/partner"
+import {
+  isValidTier,
+  rateForTier,
+  PartnerTierCode,
+} from "../../../../lib/partner-commissions/tiers"
 
 type PatchBody = {
   name?: string
   email?: string | null
   phone?: string | null
   company?: string | null
-  commission_rate?: number | null
+  tier?: PartnerTierCode
   status?: "active" | "inactive" | "suspended"
   notes?: string | null
 }
@@ -31,11 +36,14 @@ export const PATCH = async (req: AuthenticatedMedusaRequest<PatchBody>, res: Med
   if (body.email !== undefined) update.email = body.email?.trim() || null
   if (body.phone !== undefined) update.phone = body.phone?.trim() || null
   if (body.company !== undefined) update.company = body.company?.trim() || null
-  if (body.commission_rate !== undefined) {
-    update.commission_rate =
-      body.commission_rate === null
-        ? 0.07
-        : Math.max(0, Math.min(1, Number(body.commission_rate) || 0))
+  if (body.tier !== undefined) {
+    if (!isValidTier(body.tier)) {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, `Unknown tier "${body.tier}"`)
+    }
+    update.tier = body.tier
+    // Tier change resets the rate to the spec value — admin can't hold
+    // an off-spec rate through a tier change.
+    update.commission_rate = rateForTier(body.tier)
   }
   if (body.status !== undefined) update.status = body.status
   if (body.notes !== undefined) update.notes = body.notes?.trim() || null
