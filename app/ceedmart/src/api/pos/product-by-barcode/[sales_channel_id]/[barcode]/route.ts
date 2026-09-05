@@ -8,6 +8,11 @@ import {
   MedusaError,
   QueryContext,
 } from "@medusajs/framework/utils"
+import {
+  cartRejectionReason,
+  isCartEligible,
+  resolvePolicyForVariant,
+} from "../../../../../lib/listing-policy"
 
 const POS_PRODUCT_FIELDS = [
   "id",
@@ -88,6 +93,38 @@ export const GET = async (
       `No variant found for barcode "${barcode}" in sales channel ${sales_channel_id}`
     )
   }
+
+  // P4-11 — refuse anything that isn't ordinary stock (BRD §5.1, §8.11).
+  //
+  // The POS shares this catalogue with the storefront, and a cashier
+  // scanning an auction lot has no way of knowing it is reserved for a
+  // winning bidder. §8.11 requires the unique auction item cannot be sold
+  // through another checkout while reserved or fulfilled — this till IS
+  // another checkout.
+  //
+  // Custom builds are refused for the same reason: they are ordered by
+  // accepting a quote, and a pre-order sold over the counter would promise
+  // same-day collection on something being flown in from Texas.
+  const policy = await resolvePolicyForVariant(req.scope, {
+    variantId: variant.id,
+    productId: product.id,
+  })
+
+  if (!isCartEligible(policy)) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      cartRejectionReason(policy) ?? "This item can't be sold at the till."
+    )
+  }
+
+  // A pre-order CAN be sold in store, but the cashier has to know the
+  // customer is waiting weeks — so it is surfaced rather than silently
+  // rung up as stock on the shelf.
+  ;(variant as any).commerce_type = policy.commerceType
+  ;(variant as any).commerce_notice =
+    policy.commerceType === "preorder"
+      ? "Pre-order — sourced from the US. Confirm the delivery window with the customer before taking payment."
+      : null
 
   const { data: priced } = await query.graph({
     entity: "variant",

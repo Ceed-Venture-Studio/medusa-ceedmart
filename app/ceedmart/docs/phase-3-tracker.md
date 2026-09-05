@@ -164,22 +164,59 @@ per D-06, so the assisted form can be live while the builder is still off.
 
 ## Phase 4 — Auctions MVP
 
-**Blocked** on three decisions: Pulse Pay auth-hold/partial-refund support,
-production Redis, and the bidder phone-verification scope.
+**Unblocked 5 Sep 2026.** Pulse Pay supports authorisation-without-capture and
+partial refunds; production gets dedicated Redis; phone verification gates
+BIDDING only, per BRD §5.2 — H4's no-OTP POS signup stands, and a shopper who
+never bids never meets an OTP.
 
 | # | Ticket | Status |
 |---|---|---|
-| P4-1 | Email + phone verification for bidders (Pulse Identity) | blocked |
-| P4-2 | `auction` module and migrations | blocked |
-| P4-3 | Admin creation, validation, preview, publish | blocked |
-| P4-4 | Atomic bid endpoint — row lock + unique sequence | blocked |
-| P4-5 | Concurrency test suite | blocked |
-| P4-6 | Activation and closing jobs, idempotent across retry | blocked |
-| P4-7 | Anti-sniping extension, persisted + polled | blocked |
-| P4-8 | Winner payment window, reminders, unit reservation | blocked |
-| P4-9 | Default handling — next-bidder offer or relist | blocked |
-| P4-10 | Bidder deposits (conditional on gateway support) | blocked |
-| P4-11 | POS guard — auction units refused at barcode lookup | blocked |
+| P4-1 | Email + phone verification for bidders (Pulse Identity) | **done** |
+| P4-2 | `auction` module and migrations | **done** |
+| P4-3 | Admin creation, validation, preview, publish | **done** |
+| P4-4 | Atomic bid endpoint — row lock + unique sequence | **done** |
+| P4-5 | Concurrency test suite | **done** |
+| P4-6 | Activation and closing jobs, idempotent across retry | **done** |
+| P4-7 | Anti-sniping extension, persisted + polled | **done** |
+| P4-8 | Winner payment window, reminders, unit reservation | **done** |
+| P4-9 | Default handling — next-bidder offer or relist | **done** |
+| P4-10 | Bidder deposits (conditional on gateway support) | **done** |
+| P4-11 | POS guard — auction units refused at barcode lookup | **done** |
 
-**Gate:** two concurrent bids cannot both be accepted at the same sequence, and
-a closing job that runs twice produces one winner.
+**Gate:** **passed.** Two concurrent bids cannot take the same sequence — the
+second validates against the first's committed price and is rejected as below
+minimum; asserted in `concurrency.spec.ts` for both a pair and a burst of
+twelve. A closing job that runs twice returns the first outcome unchanged, even
+if the bid ledger changed between runs.
+
+**Concurrency design.** Three independent layers, because an auction closing
+twice means two people are told they won: `runOnce` claims each auction so
+instances split the batch; `placeBid` / `closeAuction` take `SELECT … FOR
+UPDATE` on the auction row so callers serialise; and unique indexes on
+`(auction_id, sequence)` and `auction_result.auction_id` refuse a duplicate even
+if both earlier layers failed. The third is the actual guarantee — the first two
+make it cheap.
+
+The bid RULES live in `lib/auction/rules` as pure functions and are applied
+inside the lock, rather than restated in SQL. Two definitions of a bid's
+validity would drift apart; the transaction's job is concurrency, not
+arithmetic.
+
+**Anti-sniping** measures the extension from the bid, not the old end time — a
+bid with one second left gives everyone the full five minutes back, which is
+what actually defeats sniping. Persisted in the same transaction so a crash
+cannot lose it.
+
+**Nothing here charges anyone.** §8.9 forbids silently charging a next bidder,
+and the same restraint is applied to the original winner: defaulting forfeits an
+already-authorised deposit and never initiates a payment. Deposits record
+authorisation and capture in separate columns so a hold is never mistaken for
+money taken.
+
+**Voiding a bid** keeps the row and its consumed sequence with a mandatory
+reason (§8.6), and is refused entirely once a result exists — a closed auction's
+outcome is a snapshot, and re-deciding it needs a dispute, not a side effect.
+
+**P4-11:** the POS barcode lookup now refuses auction lots and custom builds
+outright, and surfaces a cashier warning on pre-orders rather than ringing them
+up as shelf stock.

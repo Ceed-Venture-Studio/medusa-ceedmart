@@ -300,6 +300,9 @@ export default defineConfig({
     build_catalog: {
       resolve: "./src/modules/build-catalog",
     },
+    auction: {
+      resolve: "./src/modules/auction",
+    },
     terms: {
       resolve: "./src/modules/terms",
     },
