@@ -291,6 +291,9 @@ export default defineConfig({
     notification_log: {
       resolve: "./src/modules/notification-log",
     },
+    preorder: {
+      resolve: "./src/modules/preorder",
+    },
     terms: {
       resolve: "./src/modules/terms",
     },

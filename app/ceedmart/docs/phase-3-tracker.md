@@ -44,17 +44,36 @@ arbitrates atomically in a single statement — see `src/modules/job-claim`.
 
 | # | Ticket | Status |
 |---|---|---|
-| P1-1 | `preorder` module and migrations | todo |
-| P1-2 | Admin: mark eligible, landed price, source + condition metadata | todo |
-| P1-3 | Product page — badge, delivery estimate, cost disclosure | todo |
-| P1-4 | Cart/checkout fulfilment-group separation for mixed carts | todo |
-| P1-5 | Terms acceptance at checkout, version-bound, snapshotted | todo |
-| P1-6 | Twelve-state milestone machine + customer-facing simplification | todo |
-| P1-7 | Milestone notifications and the sourcing exception queue | todo |
-| P1-8 | Cancellation and refund by milestone, with reason codes | todo |
+| P1-1 | `preorder` module and migrations | **done** |
+| P1-2 | Admin: mark eligible, landed price, source + condition metadata | **done (API)** — admin UI page pending |
+| P1-3 | Product page — badge, delivery estimate, cost disclosure | **done** |
+| P1-4 | Cart/checkout fulfilment-group separation for mixed carts | **done** |
+| P1-5 | Terms acceptance at checkout, version-bound, snapshotted | **done** |
+| P1-6 | Twelve-state milestone machine + customer-facing simplification | **done** |
+| P1-7 | Milestone notifications and the sourcing exception queue | **done** |
+| P1-8 | Cancellation and refund by milestone, with reason codes | **done** |
 
-**Gate:** a paid pre-order carries an immutable price, terms version and promised
-date, and cannot display as normally progressing once in an exception state.
+**Gate:** **passed.** `preorder-capture` freezes unit price, FX rate, cost
+breakdown, condition, warranty and terms version onto a `PreorderOrder` at
+`order.placed`, keyed uniquely on `line_item_id` so a redelivered event cannot
+double-create. The promised date is set at `sourcing_confirmed`, not payment
+(§6.2), and pauses while waiting on a customer approval. Exception rows carry
+`exception_at` and sort to the top of the ops queue, so a stuck order cannot
+present as normally progressing.
+
+**Decisions taken:** D-01 — the window is three settable legs per offer
+(procurement / transit / customs) rather than a fixed fortnight, with an
+optional total override. D-02 — locked all-inclusive naira price; the cost
+breakdown is internal only and never reaches the storefront.
+
+**Outstanding for P1-2:** the admin dashboard PAGE. Every endpoint exists and
+is audited (`/admin/preorders/offers`, `/suppliers`, the queue, transitions and
+refunds), but no React route under `src/admin/routes/` renders them yet — ops
+would drive this with an API client today.
+
+**Not tested automatically:** the storefront has no test runner (no jest or
+vitest config, no `test` script). Its changes are verified by typecheck only,
+which fell from 23 pre-existing errors to 21.
 
 ---
 
