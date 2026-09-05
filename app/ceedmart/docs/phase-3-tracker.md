@@ -45,7 +45,7 @@ arbitrates atomically in a single statement — see `src/modules/job-claim`.
 | # | Ticket | Status |
 |---|---|---|
 | P1-1 | `preorder` module and migrations | **done** |
-| P1-2 | Admin: mark eligible, landed price, source + condition metadata | **done (API)** — admin UI page pending |
+| P1-2 | Admin: mark eligible, landed price, source + condition metadata | **done** |
 | P1-3 | Product page — badge, delivery estimate, cost disclosure | **done** |
 | P1-4 | Cart/checkout fulfilment-group separation for mixed carts | **done** |
 | P1-5 | Terms acceptance at checkout, version-bound, snapshotted | **done** |
@@ -66,10 +66,12 @@ present as normally progressing.
 optional total override. D-02 — locked all-inclusive naira price; the cost
 breakdown is internal only and never reaches the storefront.
 
-**Outstanding for P1-2:** the admin dashboard PAGE. Every endpoint exists and
-is audited (`/admin/preorders/offers`, `/suppliers`, the queue, transitions and
-refunds), but no React route under `src/admin/routes/` renders them yet — ops
-would drive this with an API client today.
+**Admin page:** `src/admin/routes/preorders/page.tsx` — offers (create, verify
+availability, publish, margin and FX-drift flags) and the ops queue, which sorts
+exceptions and overdue orders above everything else because §6.5 forbids a
+delayed order presenting as normally progressing. Milestone drawer records
+carrier, tracking and a customer-facing note; refunds go through reason codes.
+Verified by a full `medusa build`, which bundles the admin frontend.
 
 **Not tested automatically:** the storefront has no test runner (no jest or
 vitest config, no `test` script). Its changes are verified by typecheck only,
@@ -110,8 +112,11 @@ the customer, but does not yet raise a Medusa order or payment collection.
 Wiring that needs the same Pulse Pay answer blocking auction deposits (R2) for
 the deposit half of D-07; the full-payment path could ship first.
 
-**Also outstanding:** no admin dashboard pages for builds (same gap as P1-2) —
-the endpoints exist and are audited, nothing renders them.
+**Admin page:** `src/admin/routes/builds/page.tsx` — the request queue (sorted
+so requests waiting on US come first), a quote builder that sends a new version
+each time, and a QA drawer where each check is recorded individually. Failing or
+skipping a check requires a note. When dispatch is blocked, the server's message
+names the outstanding checks and the drawer surfaces it verbatim.
 
 ---
 
