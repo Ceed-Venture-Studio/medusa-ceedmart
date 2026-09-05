@@ -81,16 +81,37 @@ which fell from 23 pre-existing errors to 21.
 
 | # | Ticket | Status |
 |---|---|---|
-| P2-1 | `build` module, modelled on `modules/solar` | todo |
-| P2-2 | Requirements questionnaire | todo |
-| P2-3 | Versioned quotes — new versions never overwrite | todo |
-| P2-4 | Accept / reject / request-revision with acceptance snapshot | todo |
-| P2-5 | Accepted quote converts to a payable order | todo |
-| P2-6 | Build milestones and the QA checklist gating dispatch | todo |
-| P2-7 | Quote expiry job on the P0 scheduler | todo |
+| P2-1 | `build` module, modelled on `modules/solar` | **done** |
+| P2-2 | Requirements questionnaire | **done** |
+| P2-3 | Versioned quotes — new versions never overwrite | **done** |
+| P2-4 | Accept / reject / request-revision with acceptance snapshot | **done** |
+| P2-5 | Accepted quote converts to a payable order | **done (record)** — payment collection pending |
+| P2-6 | Build milestones and the QA checklist gating dispatch | **done** |
+| P2-7 | Quote expiry job on the P0 scheduler | **done** |
 
-**Gate:** a customer can submit without component knowledge, and staff cannot
-mark a build ready for dispatch with an incomplete QA checklist.
+**Gate:** **passed.** The request form asks only about outcomes — intended
+use, budget range, software that must run — and never for a socket, chipset or
+wattage. `assertReadyForDispatch` blocks the `ready_for_dispatch` transition
+until every required QA check has passed, naming what is outstanding; a FAILED
+required check blocks as firmly as an unchecked one, and an empty checklist
+counts as skipped rather than passed.
+
+**Design notes.** Quote revisions are new `BuildQuoteVersion` rows with no
+update path, so §7.6's "changes create a new version without overwriting prior
+versions" is structural rather than disciplinary. `canAcceptVersion` enforces
+"only the latest valid quote can be accepted" server-side and separates the two
+failure modes — superseded and expired get different messages, since a generic
+refusal makes both look like a bug. Totals are recomputed from line items
+server-side per §7.9. The QA checklist is seeded from a fixed template at
+acceptance, so it cannot be assembled ad hoc for a build that is running late.
+
+**Outstanding for P2-5:** an accepted quote creates a `BuildOrder` and emails
+the customer, but does not yet raise a Medusa order or payment collection.
+Wiring that needs the same Pulse Pay answer blocking auction deposits (R2) for
+the deposit half of D-07; the full-payment path could ship first.
+
+**Also outstanding:** no admin dashboard pages for builds (same gap as P1-2) —
+the endpoints exist and are audited, nothing renders them.
 
 ---
 

@@ -294,6 +294,9 @@ export default defineConfig({
     preorder: {
       resolve: "./src/modules/preorder",
     },
+    build: {
+      resolve: "./src/modules/build",
+    },
     terms: {
       resolve: "./src/modules/terms",
     },
