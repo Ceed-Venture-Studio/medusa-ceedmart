@@ -124,15 +124,41 @@ names the outstanding checks and the drawer surfaces it verbatim.
 
 | # | Ticket | Status |
 |---|---|---|
-| P3-1 | `build_catalog` module | todo |
-| P3-2 | Compatibility engine, server-authoritative | todo |
-| P3-3 | Guided PC configurator UI | todo |
-| P3-4 | Laptop configurator from real purchasable variants | todo |
-| P3-5 | Saved drafts, references, duplication | todo |
-| P3-6 | Configuration converts into the Phase 2 quote pipeline | todo |
+| P3-1 | `build_catalog` module | **done** |
+| P3-2 | Compatibility engine, server-authoritative | **done** |
+| P3-3 | Guided PC configurator UI | **done** |
+| P3-4 | Laptop configurator from real purchasable variants | **done** |
+| P3-5 | Saved drafts, references, duplication | **done** |
+| P3-6 | Configuration converts into the Phase 2 quote pipeline | **done** |
 
-**Gate:** every blocking incompatibility is explained in plain language, and no
-validation exists only on the client.
+**Gate:** **passed.** Every rule carries a customer-readable `message` and a
+`remedy` — a test asserts no message contains a SCREAMING_CASE rule name.
+`/store/builds/validate` is the authority and reads component attributes from
+the catalogue, never from the request body, so a client cannot declare two
+parts compatible by asserting it; the browser runs the same rules only for
+instant feedback.
+
+**Design notes.** Rules are DATA, not functions: each row compares an attribute
+on one slot against an attribute on another via an operator, so a new socket
+generation is a row rather than a deploy. The engine SKIPS a rule whose
+attributes are missing on either side rather than failing it — telling a
+customer their parts clash because we lack data about them is worse than
+staying quiet, and a specialist reviews every configuration before it becomes a
+quote. Blocking findings can never be acknowledged away; warnings can, and an
+acknowledgement for a warning no longer raised is ignored rather than carried
+forward. Changing any part clears prior acknowledgements.
+
+`P3-6` converges on the Phase 2 pipeline: a submitted configuration becomes an
+ordinary `BuildRequest`, so guided and assisted builds share one specialist
+review, one versioned quote and one QA-gated build. The configurator is a
+better front door, not a second pipeline.
+
+**Seeding:** `npx medusa exec ./src/scripts/seed-build-catalog.ts` loads the 20
+slots and 15 rules. Component OPTIONS are deliberately not seeded — they are
+real parts with real prices and belong to whoever maintains the catalogue.
+
+**Flag:** `FEATURE_BUILD_CONFIGURATOR` is separate from `FEATURE_CUSTOM_BUILD`
+per D-06, so the assisted form can be live while the builder is still off.
 
 ---
 

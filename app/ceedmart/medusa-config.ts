@@ -297,6 +297,9 @@ export default defineConfig({
     build: {
       resolve: "./src/modules/build",
     },
+    build_catalog: {
+      resolve: "./src/modules/build-catalog",
+    },
     terms: {
       resolve: "./src/modules/terms",
     },
