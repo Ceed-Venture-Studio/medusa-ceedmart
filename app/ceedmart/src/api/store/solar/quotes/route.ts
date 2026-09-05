@@ -5,9 +5,9 @@ import {
   Modules,
   validateEmail,
 } from "@medusajs/framework/utils"
-import type { INotificationModuleService } from "@medusajs/framework/types"
 import { SOLAR_MODULE } from "../../../../modules/solar"
 import type { SolarBundle } from "../../../../lib/solar/recommend"
+import { sendNotification } from "../../../../lib/notifications/send"
 
 type Body = {
   calculation_id?: string
@@ -36,9 +36,7 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     )
   }
 
-  const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER)
   const svc: any = req.scope.resolve(SOLAR_MODULE)
-  const notification: INotificationModuleService = req.scope.resolve(Modules.NOTIFICATION)
 
   const quote = await svc.createSolarQuotes({
     calculation_id: body.calculation_id ?? null,
@@ -52,23 +50,25 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     status: "new",
   })
 
-  // Email sales. Don't fail the request if Pulse is down — the quote is
-  // already persisted and admin can follow up manually.
-  try {
-    await notification.createNotifications({
-      to: SALES_INBOX,
-      channel: "email",
-      template: "solar-quote-request",
-      trigger_type: "solar.quote_requested",
-      resource_id: quote.id,
-      content: {
-        subject: `[Ceedmart Solar] New quote request — ${body.customer_name} (${body.selected_tier})`,
-        html: renderEmail(quote, body.selected_bundle),
-      },
-    })
+  // Email sales. Never fail the request if Pulse is down — the quote is
+  // already persisted and admin can follow up manually. sendNotification
+  // records the attempt and the provider's response either way, so support
+  // can tell a missing email from an unsent one (BRD §5.4).
+  const sent = await sendNotification(req.scope, {
+    to: SALES_INBOX,
+    channel: "email",
+    template: "solar-quote-request",
+    triggerType: "solar.quote_requested",
+    resourceId: quote.id,
+    resourceType: "solar_quote",
+    content: {
+      subject: `[Ceedmart Solar] New quote request — ${body.customer_name} (${body.selected_tier})`,
+      html: renderEmail(quote, body.selected_bundle),
+    },
+  })
+
+  if (sent.status === "sent") {
     await svc.updateSolarQuotes({ id: quote.id, email_sent_at: new Date() })
-  } catch (err: any) {
-    logger.error(`[solar] failed to email sales for quote ${quote.id}: ${err?.message ?? err}`)
   }
 
   res.status(201).json({ quote })

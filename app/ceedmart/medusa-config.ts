@@ -127,11 +127,45 @@ const redisModules: Record<string, any> = redisUrl
     }
   : {}
 
+// P0-6 — Redis is a hard production requirement.
+//
+// Without it the event bus, cache and workflow engine all fall back to
+// in-memory implementations. That was survivable while the platform ran no
+// scheduled work: the documented mitigation was to pin Cloud Run to
+// min=max=1 and accept the single point of failure.
+//
+// Phase 3 changes that. Auction activation and closing, quote expiry and
+// winner-payment deadlines are scheduled jobs whose correctness depends on
+// the workflow engine surviving a restart and not double-executing across
+// instances (BRD §8.8, §12.2). An in-memory engine silently satisfies
+// neither, and the failure mode — an auction that never closes, or closes
+// twice — is invisible until it costs a customer.
+//
+// So a missing REDIS_URL now refuses to boot rather than degrading quietly.
+// Deliberate single-instance operation is still possible, but it has to be
+// stated out loud via MEDUSA_ALLOW_IN_MEMORY=true.
+//
+// Safe to throw here: the Dockerfile sets NODE_ENV=production only AFTER
+// `yarn build` runs, so `medusa build` never evaluates this branch.
+const allowInMemory = process.env.MEDUSA_ALLOW_IN_MEMORY === "true"
+
 if (isProduction && !redisUrl) {
+  if (!allowInMemory) {
+    throw new Error(
+      "[ceedmart] REDIS_URL is required in production.\n" +
+        "Without it the event bus, cache and workflow engine run in-memory, " +
+        "which cannot guarantee that scheduled jobs survive a restart or run " +
+        "exactly once across instances.\n" +
+        "Set REDIS_URL, or set MEDUSA_ALLOW_IN_MEMORY=true to run " +
+        "single-instance deliberately (Cloud Run must then be pinned to " +
+        "min=max=1, and scheduled jobs are not safe to enable)."
+    )
+  }
+
   console.warn(
-    "[ceedmart] REDIS_URL is not set in production. " +
-      "Using in-memory event bus / cache / workflow engine. " +
-      "Pin Cloud Run to min=max=1 instance or set REDIS_URL."
+    "[ceedmart] Running in production WITHOUT Redis because " +
+      "MEDUSA_ALLOW_IN_MEMORY=true. Event bus, cache and workflow engine are " +
+      "in-memory. Pin Cloud Run to min=max=1 and do not enable scheduled jobs."
   )
 }
 
@@ -248,6 +282,21 @@ export default defineConfig({
       },
     },
     ...redisModules,
+    audit: {
+      resolve: "./src/modules/audit",
+    },
+    job_claim: {
+      resolve: "./src/modules/job-claim",
+    },
+    notification_log: {
+      resolve: "./src/modules/notification-log",
+    },
+    terms: {
+      resolve: "./src/modules/terms",
+    },
+    listing_policy: {
+      resolve: "./src/modules/listing-policy",
+    },
     search_log: {
       resolve: "./src/modules/search-log",
     },

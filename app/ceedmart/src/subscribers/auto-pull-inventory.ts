@@ -10,6 +10,7 @@ import type {
 } from "@medusajs/framework/types"
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/medusa"
 import { STOCK_TRANSFER_MODULE } from "../modules/stock-transfer"
+import { sendNotification } from "../lib/notifications/send"
 
 // M1 — Cross-warehouse auto-pull.
 //
@@ -37,6 +38,8 @@ type Ctx = {
   query: any
   inventory: IInventoryService
   notify: INotificationModuleService
+  // Container kept so notification sends can be logged (BRD §5.4).
+  container: MedusaContainer
   transfers: any
 }
 
@@ -226,16 +229,18 @@ async function sendDigest(
   }
   lines.push(``, `— Ceedmart`)
 
-  await ctx.notify.createNotifications({
+  await sendNotification(ctx.container, {
     to: recipient,
     channel: "email",
     template: "stock-transfer-alert",
+    triggerType: "inventory.auto_pull",
+    resourceType: "order",
     content: {
       subject: `Auto-pull: ${pulls.length} item${pulls.length === 1 ? "" : "s"} moved for order ${ref}`,
       text: lines.join("\n"),
       html: lines.join("\n"),
     },
-  } as any)
+  })
 }
 
 export default async function autoPullInventoryHandler({
@@ -251,6 +256,7 @@ export default async function autoPullInventoryHandler({
     query: container.resolve(ContainerRegistrationKeys.QUERY),
     inventory: container.resolve(Modules.INVENTORY),
     notify: container.resolve(Modules.NOTIFICATION),
+    container,
     transfers: container.resolve(STOCK_TRANSFER_MODULE),
   }
 

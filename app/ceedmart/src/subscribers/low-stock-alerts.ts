@@ -9,6 +9,8 @@ import type {
   Logger,
 } from "@medusajs/framework/types"
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/medusa"
+import type { MedusaContainer } from "@medusajs/framework/types"
+import { sendNotification } from "../lib/notifications/send"
 
 // H6 — Low-stock alerts.
 //
@@ -32,6 +34,8 @@ type Ctx = {
   query: any
   cache: ICacheService
   notify: INotificationModuleService
+  // Container kept so notification sends can be logged (BRD §5.4).
+  container: MedusaContainer
 }
 
 const parseThreshold = (raw: unknown): number | null => {
@@ -153,16 +157,18 @@ async function sendAlert(
     `— Ceedmart`,
   ].join("\n")
 
-  await ctx.notify.createNotifications({
+  await sendNotification(ctx.container, {
     to: recipient,
     channel: "email",
     template: "low-stock-alert",
+    triggerType: "inventory.low_stock",
+    resourceType: "inventory_item",
     content: {
       subject: `Low stock: ${productTitle}${variantLine}`,
       text: body,
       html: body,
     },
-  } as any)
+  })
 }
 
 export default async function lowStockAlertsHandler({
@@ -181,6 +187,7 @@ export default async function lowStockAlertsHandler({
     query: container.resolve(ContainerRegistrationKeys.QUERY),
     cache: container.resolve(Modules.CACHE),
     notify: container.resolve(Modules.NOTIFICATION),
+    container,
   }
 
   const payload = event.data

@@ -11,7 +11,8 @@
     "create-admin": "medusa exec ./src/scripts/create-admin.ts",
     "db:migrate": "medusa db:migrate",
     "db:rollback": "medusa db:rollback",
-    "user": "medusa user"
+    "user": "medusa user",
+    "test": "jest --config jest.config.js"
   },
   "dependencies": {
     "@medusajs/auth": "workspace:*",
