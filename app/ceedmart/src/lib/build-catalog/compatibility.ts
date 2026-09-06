@@ -118,14 +118,25 @@ const compare = (
     }
 
     case "in": {
-      // The right side is a list the left value must appear in — e.g. the
+      // The right side is a list the left value must appear in — e.g. a
       // board's supported memory types.
-      const list = Array.isArray(rightValue) ? rightValue : [rightValue]
+      //
+      // The left value may ITSELF be a list, and then it means "supports
+      // any of these" rather than "must all be present". A cooler listing
+      // ["AM5","LGA1700"] fits an AM5 processor; requiring every one of
+      // its sockets to match a single CPU blocked every multi-socket
+      // cooler against every processor.
+      const allowedList = Array.isArray(rightValue) ? rightValue : [rightValue]
+      const allowed = allowedList.map(normalise)
       const values = lefts.map((p) => attr(p, leftAttr)).filter(isPresent)
       if (!values.length) return null
-      const allowed = list.map(normalise)
-      const ok = values.every((v) => allowed.includes(normalise(v)))
-      return { ok, left: values[0], right: list }
+
+      const ok = values.every((v) =>
+        Array.isArray(v)
+          ? v.some((item) => allowed.includes(normalise(item)))
+          : allowed.includes(normalise(v))
+      )
+      return { ok, left: values[0], right: allowedList }
     }
 
     case "lte":

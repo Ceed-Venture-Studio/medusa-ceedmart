@@ -88,6 +88,34 @@ describe("socket and fit rules", () => {
     expect(r.blocking.map((f) => f.code)).not.toContain("gpu_clearance")
   })
 
+  it("accepts a cooler that lists the CPU's socket among several", () => {
+    // A cooler supporting ["AM5","LGA1700"] fits an AM5 processor. Requiring
+    // EVERY listed socket to match one CPU blocked every multi-socket cooler
+    // against every processor — found by driving the configurator, not by
+    // any unit test, because the seeded fixture had a single-socket cooler.
+    const r = evaluate(
+      [
+        pick("cpu_cooler", { sockets: ["AM5", "LGA1700"] }),
+        pick("cpu", { socket: "AM5" }),
+      ],
+      rules
+    )
+
+    expect(r.blocking.map((f) => f.code)).not.toContain("cooler_socket")
+  })
+
+  it("still blocks a multi-socket cooler that lacks the CPU's socket", () => {
+    const r = evaluate(
+      [
+        pick("cpu_cooler", { sockets: ["AM4", "LGA1200"] }),
+        pick("cpu", { socket: "AM5" }),
+      ],
+      rules
+    )
+
+    expect(r.blocking.map((f) => f.code)).toContain("cooler_socket")
+  })
+
   it("blocks a cooler with no bracket for the CPU socket", () => {
     const r = evaluate(
       [
