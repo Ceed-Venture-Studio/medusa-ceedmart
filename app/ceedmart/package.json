@@ -13,7 +13,8 @@
     "db:rollback": "medusa db:rollback",
     "user": "medusa user",
     "test": "jest --config jest.config.js",
-    "verify:schema": "node scripts/verify-schema.mjs"
+    "verify:schema": "node scripts/verify-schema.mjs",
+    "backfill:pulse": "medusa exec ./src/scripts/backfill-pulse-identity.ts"
   },
   "dependencies": {
     "@medusajs/auth": "workspace:*",

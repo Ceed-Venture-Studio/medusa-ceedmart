@@ -235,9 +235,21 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     const pimId = customer?.pim_id || ""
 
     if (!pimId) {
+      // This message reaches the SHOPPER: the storefront renders the error
+      // from a failed payment session verbatim. The old text named an
+      // internal field and told them to register with a system they have
+      // never heard of, at the last step of checkout.
+      //
+      // The detail belongs in the log, where someone can act on it. The
+      // customer gets something true, and a route out that is not "give up".
+      console.error(
+        `[pulse-pay] customer ${customer?.id ?? "(unknown)"} <${customer?.email ?? "?"}> ` +
+          `has no pim_id — their Pulse Identity registration failed or was issued by ` +
+          `another instance. Run \`yarn backfill:pulse apply\` to repair.`
+      )
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        "Customer does not have a Pulse Identity (pim_id). Please ensure the customer is registered with Pulse."
+        "We couldn't start your card payment. Please sign out and back in, then try again — if it keeps happening, contact us and we'll complete your order."
       )
     }
 
