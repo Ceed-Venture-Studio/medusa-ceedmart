@@ -2,7 +2,10 @@ import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
 } from "@medusajs/framework/http"
-import { MedusaError } from "@medusajs/framework/utils"
+import {
+  ContainerRegistrationKeys,
+  MedusaError,
+} from "@medusajs/framework/utils"
 import { PREORDER_MODULE } from "../../../../modules/preorder"
 import { estimateBreakdown } from "../../../../lib/preorder/estimate"
 import { computeLandedCost, marginOn, priceDrift } from "../../../../lib/preorder/pricing"
@@ -65,16 +68,57 @@ export const GET = async (
     skip: Number(req.query.offset) || 0,
   })
 
+  // Resolve the listing each offer prices, so the table reads as product
+  // names rather than identifiers. An operator scanning this list is asking
+  // "which of my products are on pre-order", and `variant_01H…` does not
+  // answer that.
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+  const productIds = (offers as any[]).map((o) => o.product_id).filter(Boolean)
+  const variantIds = (offers as any[]).map((o) => o.variant_id).filter(Boolean)
+
+  const [byProduct, byVariant] = await Promise.all([
+    productIds.length
+      ? query
+          .graph({
+            entity: "product",
+            fields: ["id", "title", "thumbnail"],
+            filters: { id: productIds },
+          })
+          .then(({ data }) => new Map((data as any[]).map((p) => [p.id, p])))
+          .catch(() => new Map())
+      : Promise.resolve(new Map()),
+    variantIds.length
+      ? query
+          .graph({
+            entity: "variant",
+            fields: ["id", "title", "sku", "product.title", "product.thumbnail"],
+            filters: { id: variantIds },
+          })
+          .then(({ data }) => new Map((data as any[]).map((v) => [v.id, v])))
+          .catch(() => new Map())
+      : Promise.resolve(new Map()),
+  ])
+
   // Decorate with the derived numbers admin actually needs to make a
   // decision: the delivery window each offer promises, and whether its
   // locked price has drifted from its components since it was set.
-  const decorated = (offers as any[]).map((offer) => ({
-    ...offer,
-    estimate: estimateBreakdown(offer),
-    landed_cost: computeLandedCost(offer.cost_components ?? {}),
-    margin: marginOn(Number(offer.locked_price), offer.cost_components ?? {}),
-    drift: priceDrift(Number(offer.locked_price), offer.cost_components ?? {}),
-  }))
+  const decorated = (offers as any[]).map((offer) => {
+    const variant = offer.variant_id ? byVariant.get(offer.variant_id) : null
+    const product = variant?.product ?? byProduct.get(offer.product_id)
+
+    return {
+      ...offer,
+      // Null when the listing has been deleted out from under the offer —
+      // the table renders that as a warning rather than a blank cell.
+      product_title: product?.title ?? null,
+      variant_title: variant?.title ?? null,
+      thumbnail: product?.thumbnail ?? null,
+      estimate: estimateBreakdown(offer),
+      landed_cost: computeLandedCost(offer.cost_components ?? {}),
+      margin: marginOn(Number(offer.locked_price), offer.cost_components ?? {}),
+      drift: priceDrift(Number(offer.locked_price), offer.cost_components ?? {}),
+    }
+  })
 
   res.json({ offers: decorated })
 }

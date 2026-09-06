@@ -18,6 +18,9 @@ import {
 } from "@medusajs/ui"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fetchAdmin } from "../../lib/client"
+import ProductPicker, {
+  type ProductSelection,
+} from "../../components/product-picker"
 
 // US pre-order operations (BRD §6.4, §6.5, §13).
 //
@@ -44,6 +47,9 @@ type Offer = {
   id: string
   product_id: string | null
   variant_id: string | null
+  product_title: string | null
+  variant_title: string | null
+  thumbnail: string | null
   supplier_id: string | null
   locked_price: number
   currency_code: string
@@ -139,9 +145,12 @@ const OfferDrawer = ({
   onSaved: () => void
 }) => {
   const [saving, setSaving] = useState(false)
+  const [listing, setListing] = useState<ProductSelection>({
+    productId: null,
+    variantId: null,
+    label: "",
+  })
   const [form, setForm] = useState<Record<string, string>>({
-    variant_id: "",
-    product_id: "",
     supplier_id: "",
     price_naira: "",
     procurement_days: "3",
@@ -175,8 +184,8 @@ const OfferDrawer = ({
     (Number(form.customs_days) || 0)
 
   const save = async () => {
-    if (!form.variant_id.trim() && !form.product_id.trim()) {
-      toast.error("Give either a variant ID or a product ID")
+    if (!listing.productId && !listing.variantId) {
+      toast.error("Choose the product this offer prices")
       return
     }
     if (!kobo("price_naira")) {
@@ -190,10 +199,8 @@ const OfferDrawer = ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          variant_id: form.variant_id.trim() || undefined,
-          product_id: form.variant_id.trim()
-            ? undefined
-            : form.product_id.trim() || undefined,
+          variant_id: listing.variantId ?? undefined,
+          product_id: listing.variantId ? undefined : listing.productId ?? undefined,
           supplier_id: form.supplier_id || undefined,
           locked_price: kobo("price_naira"),
           procurement_days: Number(form.procurement_days) || 0,
@@ -213,6 +220,7 @@ const OfferDrawer = ({
         }),
       })
       toast.success("Offer created as a draft — confirm availability to publish it")
+      setListing({ productId: null, variantId: null, label: "" })
       onSaved()
       onClose()
     } catch (err: any) {
@@ -229,23 +237,11 @@ const OfferDrawer = ({
           <Drawer.Title>New pre-order offer</Drawer.Title>
         </Drawer.Header>
         <Drawer.Body className="flex flex-col gap-4 overflow-y-auto">
-          <div className="flex flex-col gap-2">
-            <Label size="small">Variant ID</Label>
-            <Input
-              value={form.variant_id}
-              onChange={(e) => set("variant_id", e.target.value)}
-              placeholder="variant_01H…"
-            />
-            <Text size="small" className="text-ui-fg-muted">
-              Or leave blank and give a product ID below to cover every variant.
-            </Text>
-            <Input
-              value={form.product_id}
-              onChange={(e) => set("product_id", e.target.value)}
-              placeholder="prod_01H…"
-              disabled={!!form.variant_id.trim()}
-            />
-          </div>
+          <ProductPicker
+            value={listing}
+            onChange={setListing}
+            helpText="An offer prices a listing you already sell. Create the product first, then attach the pre-order terms here."
+          />
 
           <div className="flex flex-col gap-2">
             <Label size="small">Supplier</Label>
@@ -767,11 +763,23 @@ const PreordersPage = () => {
                     return (
                       <Table.Row key={o.id}>
                         <Table.Cell>
-                          <Text size="small" className="font-mono">
-                            {o.variant_id ?? o.product_id}
-                          </Text>
+                          {o.product_title ? (
+                            <Text size="small">
+                              {o.product_title}
+                              {o.variant_title && (
+                                <span className="text-ui-fg-muted">
+                                  {" "}· {o.variant_title}
+                                </span>
+                              )}
+                            </Text>
+                          ) : (
+                            <Text size="small" className="text-ui-fg-error">
+                              Listing deleted
+                            </Text>
+                          )}
                           <Text size="small" className="text-ui-fg-muted">
                             {label(o.condition)}
+                            {!o.variant_id && o.product_title && " · all variants"}
                           </Text>
                         </Table.Cell>
                         <Table.Cell>

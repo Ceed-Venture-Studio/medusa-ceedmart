@@ -18,6 +18,9 @@ import {
 } from "@medusajs/ui"
 import { useCallback, useEffect, useState } from "react"
 import { fetchAdmin } from "../../lib/client"
+import ProductPicker, {
+  type ProductSelection,
+} from "../../components/product-picker"
 
 // Auction operations (BRD §8.4, §8.6, §8.10).
 //
@@ -97,10 +100,14 @@ const CreateDrawer = ({
   onClose: () => void
   onSaved: () => void
 }) => {
+  const [listing, setListing] = useState<ProductSelection>({
+    productId: null,
+    variantId: null,
+    label: "",
+  })
   const [form, setForm] = useState<Record<string, string>>({
     title: "",
     description: "",
-    variant_id: "",
     inventory_item_id: "",
     unit_reference: "",
     condition: "used",
@@ -142,7 +149,7 @@ const CreateDrawer = ({
         body: JSON.stringify({
           title: form.title.trim(),
           description: form.description.trim() || undefined,
-          variant_id: form.variant_id.trim() || undefined,
+          variant_id: listing.variantId ?? undefined,
           inventory_item_id: form.inventory_item_id.trim() || undefined,
           unit_reference: form.unit_reference.trim() || undefined,
           condition: form.condition,
@@ -191,18 +198,28 @@ const CreateDrawer = ({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1">
-              <Text size="small" className="text-ui-fg-muted">Variant ID</Text>
-              <Input value={form.variant_id} onChange={(e) => set("variant_id", e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Text size="small" className="text-ui-fg-muted">Inventory item ID</Text>
-              <Input
-                value={form.inventory_item_id}
-                onChange={(e) => set("inventory_item_id", e.target.value)}
-              />
-            </div>
+          <ProductPicker
+            value={listing}
+            onChange={(sel) => {
+              setListing(sel)
+              // An auction sells one unit, so the title defaults to the
+              // listing — the operator can still override it for a lot
+              // description like "ThinkPad X1, ex-demo".
+              if (sel.label && !form.title.trim()) set("title", sel.label)
+            }}
+            requireVariant
+            helpText="An auction sells one specific unit of a listing you already carry."
+          />
+
+          <div className="flex flex-col gap-1">
+            <Text size="small" className="text-ui-fg-muted">
+              Inventory item ID (optional)
+            </Text>
+            <Input
+              value={form.inventory_item_id}
+              onChange={(e) => set("inventory_item_id", e.target.value)}
+              placeholder="Locks this exact unit against other checkouts"
+            />
           </div>
 
           <div className="flex flex-col gap-1">
