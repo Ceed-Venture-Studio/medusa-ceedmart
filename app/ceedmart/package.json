@@ -12,7 +12,8 @@
     "db:migrate": "medusa db:migrate",
     "db:rollback": "medusa db:rollback",
     "user": "medusa user",
-    "test": "jest --config jest.config.js"
+    "test": "jest --config jest.config.js",
+    "verify:schema": "node scripts/verify-schema.mjs"
   },
   "dependencies": {
     "@medusajs/auth": "workspace:*",

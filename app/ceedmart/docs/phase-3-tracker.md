@@ -220,3 +220,33 @@ outcome is a snapshot, and re-deciding it needs a dispute, not a side effect.
 **P4-11:** the POS barcode lookup now refuses auction lots and custom builds
 outright, and surfaces a cashier warning on pre-orders rather than ringing them
 up as shelf stock.
+
+---
+
+## Verification
+
+Two scripts, kept because the same class of bug kept getting through.
+
+Six runtime bugs this cycle passed `tsc`, 259 unit tests and a full `medusa
+build`, and were found only by running the app: three schema mismatches, three
+storefront failures. Neither category is reachable from a type checker — one
+needs a database, the other needs a request.
+
+**`yarn verify:schema`** (backend) applies every migration to an empty database
+and writes one row for each of the 39 models across all 17 custom modules. It
+catches the three schema bugs that shipped: `raw_<field>` companion columns
+written as `<field>_raw`, models whose derived table name the migration never
+created, and fields on a model no migration added. Each was verified to fail
+this script by reintroducing it. See `scripts/README.md`.
+
+Running against a FRESH database is the point — the dev database has been
+patched by hand and can pass while a clean checkout fails. `commission_entry`
+carried the `raw_` bug from the day M3 shipped, silently, because the subscriber
+caught and logged the error rather than surfacing it.
+
+**`yarn smoke`** (storefront) drives the running app over HTTP across three
+tiers. It catches the `"use server"` export violations and the middleware asset
+redirect, both of which broke every page while every test stayed green. See the
+storefront's `scripts/README.md`.
+
+Neither is wired into CI yet.
