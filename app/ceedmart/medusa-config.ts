@@ -246,7 +246,11 @@ export default defineConfig({
               serviceKey: process.env.PULSE_PAYMENT_SERVICE_KEY,
               tenantId: process.env.PULSE_IDENTITY_TENANT_ID,
               bearerToken: process.env.PULSE_PAYMENT_BEARER_TOKEN,
-              channel: "paystack",
+              // Points at a local Pulse Pay instance for validation. The
+              // provider falls back to the hosted service when unset, so
+              // production is unaffected by this being absent.
+              baseUrl: process.env.PULSE_PAYMENT_BASE_URL,
+              channel: process.env.PULSE_PAYMENT_CHANNEL || "paystack",
               successRedirectUrl: process.env.STORE_CORS
                 ? process.env.STORE_CORS.split(",")[0] + "/ng/checkout?step=review"
                 : "http://localhost:8000/ng/checkout?step=review",

@@ -23,7 +23,12 @@ type RegisterPulseCustomerInput = {
   phone: string
 }
 
+// Overridable so a local Pulse Identity instance can be used for validation.
+// The payment provider hard-fails without a pim_id, so identity and payment
+// have to point at the same environment — a customer registered against the
+// hosted identity manager is unknown to a local Pulse Pay.
 const PULSE_BASE_URL =
+  process.env.PULSE_IDENTITY_BASE_URL ||
   "https://pulse-identity-manager-218803590341.europe-west1.run.app/api/v1"
 
 const registerPulseCustomerStep = createStep(
