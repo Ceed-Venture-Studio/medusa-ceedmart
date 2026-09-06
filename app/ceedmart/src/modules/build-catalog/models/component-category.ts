@@ -7,7 +7,7 @@ import { model } from "@medusajs/framework/utils"
 // A server or a NAS has different slots; nothing here assumes a desktop PC.
 
 const ComponentCategory = model
-  .define("ComponentCategory", {
+  .define({ name: "ComponentCategory", tableName: "build_component_category" }, {
     id: model.id({ prefix: "bcat" }).primaryKey(),
     code: model.text().unique(),
     label: model.text(),

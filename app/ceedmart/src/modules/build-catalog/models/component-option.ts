@@ -14,7 +14,7 @@ import { model } from "@medusajs/framework/utils"
 // a column per attribute across every category would be mostly nulls.
 
 const ComponentOption = model
-  .define("ComponentOption", {
+  .define({ name: "ComponentOption", tableName: "build_component_option" }, {
     id: model.id({ prefix: "bopt" }).primaryKey(),
     category_id: model.text(),
 

@@ -17,7 +17,7 @@ import { model } from "@medusajs/framework/utils"
 // customer acknowledges it.
 
 const CompatibilityRule = model
-  .define("CompatibilityRule", {
+  .define({ name: "CompatibilityRule", tableName: "build_compatibility_rule" }, {
     id: model.id({ prefix: "brul" }).primaryKey(),
     code: model.text().unique(),
 

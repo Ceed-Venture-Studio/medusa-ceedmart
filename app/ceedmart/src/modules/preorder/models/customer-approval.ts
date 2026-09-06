@@ -18,7 +18,7 @@ import { model } from "@medusajs/framework/utils"
 // to pay more.
 
 const CustomerApproval = model
-  .define("CustomerApproval", {
+  .define({ name: "CustomerApproval", tableName: "preorder_customer_approval" }, {
     id: model.id({ prefix: "preap" }).primaryKey(),
     preorder_order_id: model.text(),
     order_id: model.text().nullable(),

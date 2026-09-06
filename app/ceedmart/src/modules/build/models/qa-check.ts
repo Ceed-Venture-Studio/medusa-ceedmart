@@ -11,7 +11,7 @@ import { model } from "@medusajs/framework/utils"
 // dispatch from the ones that are merely recorded.
 
 const QaCheck = model
-  .define("QaCheck", {
+  .define({ name: "QaCheck", tableName: "build_qa_check" }, {
     id: model.id({ prefix: "bldqa" }).primaryKey(),
     build_order_id: model.text(),
 
