@@ -53,6 +53,23 @@ type AuctionRow = {
   } | null
 }
 
+type DisputeRow = {
+  id: string
+  kind: string
+  description: string
+  status: string
+  resolution: string | null
+  created_at: string
+}
+
+type DepositRow = {
+  id: string
+  bidder_id: string
+  amount: number
+  status: string
+  forfeit_reason: string | null
+}
+
 type BidRow = {
   id: string
   sequence: number
@@ -341,13 +358,24 @@ const DetailDrawer = ({
   onChanged: () => void
 }) => {
   const [bids, setBids] = useState<BidRow[] | null>(null)
+  const [disputes, setDisputes] = useState<DisputeRow[]>([])
+  const [deposits, setDeposits] = useState<DepositRow[]>([])
   const [reason, setReason] = useState("")
+  const [newDispute, setNewDispute] = useState({ kind: "payment", description: "" })
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
     if (!auction) return
-    fetchAdmin<{ bids: BidRow[] }>(`/admin/auctions/${auction.id}`)
-      .then((r) => setBids(r.bids))
+    fetchAdmin<{
+      bids: BidRow[]
+      disputes: DisputeRow[]
+      deposits: DepositRow[]
+    }>(`/admin/auctions/${auction.id}`)
+      .then((r) => {
+        setBids(r.bids)
+        setDisputes(r.disputes ?? [])
+        setDeposits(r.deposits ?? [])
+      })
       .catch(() => setBids([]))
   }, [auction?.id])
 
@@ -394,6 +422,64 @@ const DetailDrawer = ({
       onChanged()
     } catch (err: any) {
       toast.error(err?.message ?? "Could not void that bid")
+    }
+  }
+
+  const raiseDispute = async () => {
+    if (!newDispute.description.trim()) {
+      toast.error("Describe what the dispute is about")
+      return
+    }
+    try {
+      await fetchAdmin(`/admin/auctions/${auction.id}/disputes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newDispute),
+      })
+      toast.success("Dispute raised")
+      setNewDispute({ kind: "payment", description: "" })
+      load()
+      onChanged()
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not raise that dispute")
+    }
+  }
+
+  const closeDispute = async (d: DisputeRow, status: string) => {
+    if (!reason.trim()) {
+      toast.error("Enter a resolution above — closing a dispute needs one")
+      return
+    }
+    try {
+      await fetchAdmin(`/admin/auctions/${auction.id}/disputes/${d.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, resolution: reason.trim() }),
+      })
+      toast.success(`Dispute ${status}`)
+      load()
+      onChanged()
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not close that dispute")
+    }
+  }
+
+  const actOnDeposit = async (d: DepositRow, action: "release" | "forfeit") => {
+    if (action === "forfeit" && !reason.trim()) {
+      toast.error("Enter a reason above — a forfeited deposit needs one")
+      return
+    }
+    try {
+      await fetchAdmin(`/admin/auctions/${auction.id}/deposits/${d.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, reason: reason.trim() || undefined }),
+      })
+      toast.success(`Deposit ${action}d`)
+      load()
+      onChanged()
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update that deposit")
     }
   }
 
@@ -466,6 +552,140 @@ const DetailDrawer = ({
                 Cancel auction
               </Button>
             )}
+          </div>
+
+          {/* ── Deposits (§8.9) ─────────────────────────────────── */}
+          {deposits.length > 0 && (
+            <div className="border-t border-ui-border-base pt-4">
+              <Text size="small" weight="plus" className="mb-2">
+                Bidder deposits
+              </Text>
+              <div className="flex flex-col gap-1">
+                {deposits.map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between gap-2 border-b border-ui-border-base pb-1"
+                  >
+                    <div className="flex flex-col">
+                      <Text size="small">
+                        {naira(d.amount)} · {label(d.status)}
+                      </Text>
+                      <Text size="small" className="text-ui-fg-muted">
+                        {d.bidder_id}
+                        {d.forfeit_reason ? ` · ${d.forfeit_reason}` : ""}
+                      </Text>
+                    </div>
+                    {d.status === "authorized" && (
+                      <div className="flex gap-1">
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          onClick={() => actOnDeposit(d, "release")}
+                        >
+                          Release
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => actOnDeposit(d, "forfeit")}
+                        >
+                          Forfeit
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <Text size="small" className="text-ui-fg-muted mt-2">
+                Holds, not charges. Releasing lifts the hold; forfeiting
+                retains an amount already authorised, and needs a reason.
+              </Text>
+            </div>
+          )}
+
+          {/* ── Disputes (§8.10) ────────────────────────────────── */}
+          <div className="border-t border-ui-border-base pt-4">
+            <Text size="small" weight="plus" className="mb-2">
+              Disputes
+            </Text>
+
+            {disputes.length === 0 ? (
+              <Text size="small" className="text-ui-fg-muted mb-2">
+                None raised.
+              </Text>
+            ) : (
+              <div className="flex flex-col gap-2 mb-3">
+                {disputes.map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex flex-col gap-1 border-b border-ui-border-base pb-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <Text size="small">
+                        {label(d.kind)} · {label(d.status)}
+                      </Text>
+                      {d.status !== "resolved" && d.status !== "rejected" && (
+                        <div className="flex gap-1">
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            onClick={() => closeDispute(d, "resolved")}
+                          >
+                            Resolve
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="transparent"
+                            onClick={() => closeDispute(d, "rejected")}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    <Text size="small" className="text-ui-fg-muted">
+                      {d.description}
+                    </Text>
+                    {d.resolution && (
+                      <Text size="small" className="text-ui-fg-subtle">
+                        Outcome: {d.resolution}
+                      </Text>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <Select
+                value={newDispute.kind}
+                onValueChange={(v) => setNewDispute((n) => ({ ...n, kind: v }))}
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                </Select.Trigger>
+                <Select.Content>
+                  {["payment", "condition", "bid_validity", "fulfilment", "other"].map(
+                    (k) => (
+                      <Select.Item key={k} value={k}>
+                        {label(k)}
+                      </Select.Item>
+                    )
+                  )}
+                </Select.Content>
+              </Select>
+              <Textarea
+                rows={2}
+                value={newDispute.description}
+                onChange={(e) =>
+                  setNewDispute((n) => ({ ...n, description: e.target.value }))
+                }
+                placeholder="What is being disputed?"
+              />
+              <Button size="small" variant="secondary" onClick={raiseDispute}>
+                Raise dispute
+              </Button>
+            </div>
           </div>
 
           <div className="border-t border-ui-border-base pt-4">

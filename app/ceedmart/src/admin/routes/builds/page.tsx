@@ -116,6 +116,184 @@ const BUILD_STATUSES = [
   "unable_to_fulfil",
 ]
 
+
+// ─── Request actions ──────────────────────────────────────────────────────
+
+const REQUEST_ACTIONS: { value: string; label: string; needsMessage?: boolean }[] = [
+  { value: "under_review", label: "Mark under review" },
+  {
+    value: "more_information_required",
+    label: "Ask the customer a question",
+    needsMessage: true,
+  },
+  { value: "rejected", label: "Turn this request down" },
+  { value: "cancelled", label: "Cancel" },
+]
+
+const RequestDrawer = ({
+  request,
+  onClose,
+  onChanged,
+}: {
+  request: BuildRequest | null
+  onClose: () => void
+  onChanged: () => void
+}) => {
+  const [action, setAction] = useState("")
+  const [message, setMessage] = useState("")
+  const [available, setAvailable] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setAction("")
+    setMessage("")
+    setAvailable([])
+    if (!request) return
+    // Ask the server which moves are legal from here rather than offering
+    // all of them and letting the machine reject four out of five.
+    fetchAdmin<{ available_transitions: string[] }>(
+      `/admin/builds/requests/${request.id}`
+    )
+      .then((r) => setAvailable(r.available_transitions ?? []))
+      .catch(() => setAvailable([]))
+  }, [request?.id])
+
+  if (!request) return null
+
+  const chosen = REQUEST_ACTIONS.find((a) => a.value === action)
+
+  const submit = async () => {
+    if (!action) {
+      toast.error("Choose what to do")
+      return
+    }
+    if (chosen?.needsMessage && !message.trim()) {
+      toast.error("Type the question — the customer receives it by email")
+      return
+    }
+    setBusy(true)
+    try {
+      await fetchAdmin(`/admin/builds/requests/${request.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: action,
+          message: message.trim() || undefined,
+          reason: message.trim() || undefined,
+        }),
+      })
+      toast.success(
+        action === "more_information_required"
+          ? "Question sent to the customer"
+          : `Request ${label(action).toLowerCase()}`
+      )
+      onChanged()
+      onClose()
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update this request")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Drawer open onOpenChange={(v) => !v && onClose()}>
+      <Drawer.Content>
+        <Drawer.Header>
+          <Drawer.Title>{request.reference}</Drawer.Title>
+        </Drawer.Header>
+        <Drawer.Body className="flex flex-col gap-4 overflow-y-auto">
+          <div className="rounded-md bg-ui-bg-subtle p-3 flex flex-col gap-1">
+            <Text size="small" weight="plus">
+              {request.customer_name} · {label(request.build_type)}
+            </Text>
+            <Text size="small" className="text-ui-fg-subtle">
+              {request.intended_use}
+            </Text>
+            <Text size="small" className="text-ui-fg-muted">
+              {request.customer_email}
+              {request.customer_phone ? ` · ${request.customer_phone}` : ""}
+            </Text>
+            <Text size="small" className="text-ui-fg-muted">
+              Budget {naira(request.budget_min)} – {naira(request.budget_max)}
+            </Text>
+          </div>
+
+          {request.required_software?.length ? (
+            <div>
+              <Text size="small" className="text-ui-fg-muted">Must run</Text>
+              <Text size="small">{request.required_software.join(", ")}</Text>
+            </div>
+          ) : null}
+          {request.performance_notes && (
+            <div>
+              <Text size="small" className="text-ui-fg-muted">Performance</Text>
+              <Text size="small">{request.performance_notes}</Text>
+            </div>
+          )}
+          {request.notes && (
+            <div>
+              <Text size="small" className="text-ui-fg-muted">Notes</Text>
+              <Text size="small" className="whitespace-pre-line">{request.notes}</Text>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Badge>{label(request.status)}</Badge>
+            {request.quote && (
+              <Text size="small" className="text-ui-fg-muted">
+                {request.quote.reference} · v{request.quote.version_count}
+              </Text>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-ui-border-base pt-4">
+            <Label size="small">What do you want to do?</Label>
+            <Select value={action} onValueChange={setAction}>
+              <Select.Trigger>
+                <Select.Value placeholder="Choose an action" />
+              </Select.Trigger>
+              <Select.Content>
+                {REQUEST_ACTIONS.filter(
+                  (a) => !available.length || available.includes(a.value)
+                ).map((a) => (
+                  <Select.Item key={a.value} value={a.value}>
+                    {a.label}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select>
+
+            {available.length === 0 && (
+              <Text size="small" className="text-ui-fg-muted">
+                Nothing further to do here — this request has moved past the
+                stage where staff drive it.
+              </Text>
+            )}
+
+            {action && (
+              <Textarea
+                rows={3}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder={
+                  chosen?.needsMessage
+                    ? "What do you need from them? This is emailed to the customer."
+                    : "Reason (optional, shared with the customer)"
+                }
+              />
+            )}
+
+            <Button onClick={submit} isLoading={busy} disabled={!action}>
+              {chosen?.needsMessage ? "Send question" : "Apply"}
+            </Button>
+          </div>
+        </Drawer.Body>
+      </Drawer.Content>
+    </Drawer>
+  )
+}
+
 // ─── Quote builder ────────────────────────────────────────────────────────
 
 const QuoteDrawer = ({
@@ -528,6 +706,7 @@ const BuildsPage = () => {
   const [requests, setRequests] = useState<BuildRequest[] | null>(null)
   const [builds, setBuilds] = useState<BuildOrder[] | null>(null)
   const [quoting, setQuoting] = useState<BuildRequest | null>(null)
+  const [openRequest, setOpenRequest] = useState<BuildRequest | null>(null)
   const [openBuild, setOpenBuild] = useState<BuildOrder | null>(null)
   const [tick, setTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -644,9 +823,18 @@ const BuildsPage = () => {
                         )}
                       </Table.Cell>
                       <Table.Cell>
-                        <Button size="small" onClick={() => setQuoting(r)}>
-                          {r.quote?.version_count ? "Revise" : "Quote"}
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button size="small" onClick={() => setQuoting(r)}>
+                            {r.quote?.version_count ? "Revise" : "Quote"}
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            onClick={() => setOpenRequest(r)}
+                          >
+                            Open
+                          </Button>
+                        </div>
                       </Table.Cell>
                     </Table.Row>
                   ))}
@@ -712,6 +900,11 @@ const BuildsPage = () => {
         </Tabs>
       </div>
 
+      <RequestDrawer
+        request={openRequest}
+        onClose={() => setOpenRequest(null)}
+        onChanged={reload}
+      />
       <QuoteDrawer
         request={quoting}
         onClose={() => setQuoting(null)}
