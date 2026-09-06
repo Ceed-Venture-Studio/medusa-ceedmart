@@ -11,7 +11,8 @@
   },
   "scripts": {
     "build": "yarn run -T tsc --build",
-    "watch": "yarn run -T tsc --build --watch"
+    "watch": "yarn run -T tsc --build --watch",
+    "test": "../../../../node_modules/.bin/jest --passWithNoTests src"
   },
   "dependencies": {
     "@medusajs/framework": "workspace:*"

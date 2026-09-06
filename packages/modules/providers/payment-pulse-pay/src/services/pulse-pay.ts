@@ -42,26 +42,92 @@ type PulsePayOptions = {
 const PULSE_PAY_BASE_URL =
   "https://pulse-pay-payment-enablement-service-218803590341.europe-west1.run.app/api/v1"
 
+// Pulse's PaymentStatus enum, verified against
+// PulsePaymentCore.Domain/Enums/PaymentStatus.cs. Named rather than inlined
+// because the numbers alone are what caused the original bug.
+//
+// The previous mapping read these as if they were PayoutStatus — a genuinely
+// different enum in the same API where 1=Pending and 2=Success. Eight of the
+// nine values were wrong, and the expensive one was 3: a COMPLETED payment
+// was reported to Medusa as "canceled".
+//
+// That is also why authorizePayment grew a "trust the reference" fallback.
+// A real successful payment could never map to captured, so something had to
+// force it through, and what got written authorised every session whether it
+// had been paid or not. Correcting this enum is what makes that removable.
+export enum PulsePaymentStatus {
+  Initiated = 0,
+  Authorized = 1,
+  Pending = 2,
+  Completed = 3,
+  Failed = 4,
+  Cancelled = 5,
+  Refunded = 6,
+  ChargedBack = 7,
+  Expired = 8,
+}
+
 /**
- * Map Pulse status to Medusa PaymentSessionStatus.
- * Pulse may send status as number (0,1,2,3) or string ("success","failed").
+ * Map a Pulse payment status to a Medusa PaymentSessionStatus.
+ *
+ * Accepts the numeric enum or the string forms Pulse uses in webhooks.
+ * An UNRECOGNISED value returns "pending" rather than a guess: pending is
+ * the only status that neither takes money nor abandons an order, so it is
+ * the one safe answer when we do not know.
  */
-function mapPulseStatus(status: any): PaymentSessionStatus {
-  const normalized = typeof status === "string" ? status.toLowerCase() : status
+export function mapPulseStatus(status: any): PaymentSessionStatus {
+  const normalized = typeof status === "string" ? status.trim().toLowerCase() : status
 
   switch (normalized) {
-    case 1:
+    // Created, or still moving. Nothing decided yet.
+    case PulsePaymentStatus.Initiated:
+    case PulsePaymentStatus.Pending:
+    case "initiated":
+    case "pending":
+    case "ongoing":
+    case "processing":
+      return "pending" as PaymentSessionStatus
+
+    // Authorized is a HOLD, not money taken. Reporting it as captured is how
+    // an order gets fulfilled against funds nobody has collected.
+    case PulsePaymentStatus.Authorized:
+    case "authorized":
+      return "authorized" as PaymentSessionStatus
+
+    // The only status that means paid.
+    case PulsePaymentStatus.Completed:
+    case "completed":
     case "success":
+    case "successful":
       return "captured" as PaymentSessionStatus
-    case 2:
+
+    case PulsePaymentStatus.Failed:
     case "failed":
       return "error" as PaymentSessionStatus
-    case 3:
+
+    // Expired is a cancellation the clock performed.
+    case PulsePaymentStatus.Cancelled:
+    case PulsePaymentStatus.Expired:
     case "cancelled":
     case "canceled":
+    case "abandoned":
+    case "expired":
       return "canceled" as PaymentSessionStatus
-    case 0:
-    case "pending":
+
+    // Money was captured and later returned. Medusa's session status has no
+    // "refunded" — the refund lives on the payment, not the session — so the
+    // truthful answer about the SESSION is that it was captured.
+    case PulsePaymentStatus.Refunded:
+    case "refunded":
+      return "captured" as PaymentSessionStatus
+
+    // A chargeback is a disputed reversal, not an orderly refund. Surfacing
+    // it as an error is what gets a human to look at it.
+    case PulsePaymentStatus.ChargedBack:
+    case "chargedback":
+    case "charged_back":
+      return "error" as PaymentSessionStatus
+
     default:
       return "pending" as PaymentSessionStatus
   }
@@ -259,47 +325,30 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     }
 
     const status = mapPulseStatus(pulseStatus)
-    console.log("Pulse authorizePayment:", { pulseId, pulseStatus, mappedStatus: status })
 
-    // If Pulse GET says success/captured → authorize
-    if (
-      status === ("captured" as PaymentSessionStatus)
-    ) {
+    // captured, not authorized: Pulse's channel is Paystack, which takes the
+    // money at the point of payment. There is no separate capture step to
+    // wait for, so a Completed payment is already collected.
+    if (status === ("captured" as PaymentSessionStatus)) {
       return {
         status: "authorized" as PaymentSessionStatus,
-        data: {
-          ...input.data,
-          pulse_status: pulseStatus,
-        } as Record<string, unknown>,
+        data: { ...input.data, pulse_status: pulseStatus } as Record<string, unknown>,
       }
     }
 
-    // If Pulse GET doesn't show success, but customer was redirected back
-    // from Paystack (meaning payment went through), the Pulse record may
-    // not be updated yet or may have a stale status.
-    // Trust the payment if we have a valid pulse reference.
-    if (input.data?.pulse_reference || input.data?.transaction_reference) {
-      console.log(
-        "Pulse authorizePayment: Pulse status is",
-        pulseStatus,
-        "but payment has a reference — treating as authorized"
-      )
-      return {
-        status: "authorized" as PaymentSessionStatus,
-        data: {
-          ...input.data,
-          pulse_status: pulseStatus,
-          authorized_by_reference: true,
-        } as Record<string, unknown>,
-      }
-    }
-
+    // Anything else is reported as it is.
+    //
+    // There used to be a fallback here that returned "authorized" whenever the
+    // session carried a pulse_reference — which initiatePayment always sets, so
+    // in practice EVERY session authorised, paid or not. It was a workaround for
+    // the status mapping above being wrong: Completed (3) mapped to "canceled",
+    // so no real payment could ever authorise through the status path and
+    // something had to force it. With the enum corrected the workaround is not
+    // just unnecessary, it is the difference between charging a customer and
+    // taking their order for free.
     return {
       status,
-      data: {
-        ...input.data,
-        pulse_status: pulseStatus,
-      } as Record<string, unknown>,
+      data: { ...input.data, pulse_status: pulseStatus } as Record<string, unknown>,
     }
   }
 
