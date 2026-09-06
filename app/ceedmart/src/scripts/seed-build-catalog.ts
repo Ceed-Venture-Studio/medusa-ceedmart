@@ -2,6 +2,7 @@ import { ExecArgs } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { BUILD_CATALOG_MODULE } from "../modules/build-catalog"
 import { DEFAULT_COMPATIBILITY_RULES } from "../lib/build-catalog/default-rules"
+import { CATEGORY_SCHEMAS } from "../lib/build-catalog/schema"
 
 // Seeds the component slots and compatibility rules for the guided builder
 // (BRD §7.3, §7.4).
@@ -37,21 +38,61 @@ const CATEGORIES = [
   { code: "laptop_battery", label: "Battery & charger", applies_to: "laptop", is_required: false, sort_order: 60 },
 ]
 
+// The kinds of thing that can be configured. Rows, not an enum, so a third
+// kind is an admin action rather than a migration (§7.1).
+const BUILD_TYPES = [
+  {
+    code: "desktop",
+    label: "Desktop PC",
+    customer_blurb: "Built to your spec from parts",
+    sort_order: 10,
+  },
+  {
+    code: "laptop",
+    label: "Laptop",
+    customer_blurb: "Configured from available models",
+    sort_order: 20,
+  },
+]
+
 export default async function seedBuildCatalog({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
   const svc: any = container.resolve(BUILD_CATALOG_MODULE)
 
+  let createdTypes = 0
+  for (const type of BUILD_TYPES) {
+    const [existing] = await svc.listBuildTypes({ code: type.code }, { take: 1 })
+    if (existing) {
+      await svc.updateBuildTypes({ id: existing.id, ...type })
+      continue
+    }
+    await svc.createBuildTypes({ ...type, is_active: true })
+    createdTypes++
+  }
+
   let createdCategories = 0
   for (const category of CATEGORIES) {
+    const schema = CATEGORY_SCHEMAS.find((c) => c.code === category.code)
+    const payload = {
+      ...category,
+      // Slots carry their build types as an array — most are shared, and
+      // the old single-value enum could not say so.
+      build_types: schema?.buildTypes ?? [category.applies_to],
+      // The field definitions the admin form renders and the importer
+      // validates against. A category may override these in the database;
+      // seeding only fills them in.
+      attribute_schema: schema?.fields ?? null,
+    }
+
     const [existing] = await svc.listComponentCategories(
       { code: category.code },
       { take: 1 }
     )
     if (existing) {
-      await svc.updateComponentCategories({ id: existing.id, ...category })
+      await svc.updateComponentCategories({ id: existing.id, ...payload })
       continue
     }
-    await svc.createComponentCategories(category)
+    await svc.createComponentCategories(payload)
     createdCategories++
   }
 
@@ -70,8 +111,9 @@ export default async function seedBuildCatalog({ container }: ExecArgs) {
   }
 
   logger.info(
-    `[seed-build-catalog] ${CATEGORIES.length} slots (${createdCategories} new), ` +
+    `[seed-build-catalog] ${BUILD_TYPES.length} build types (${createdTypes} new), ` +
+      `${CATEGORIES.length} slots (${createdCategories} new), ` +
       `${DEFAULT_COMPATIBILITY_RULES.length} rules (${createdRules} new). ` +
-      `Add component options in admin — they are real parts with real prices.`
+      `Add parts under Build Catalogue in admin — by hand or by CSV.`
   )
 }
