@@ -88,7 +88,14 @@ type Preorder = {
   paused_days: number
 }
 
-type Supplier = { id: string; name: string; country_code: string }
+type Supplier = {
+  id: string
+  name: string
+  country_code: string
+  reference: string | null
+  contact_email: string | null
+  is_active: boolean
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -138,13 +145,22 @@ const OfferDrawer = ({
   suppliers,
   onClose,
   onSaved,
+  onSuppliersChanged,
 }: {
   open: boolean
   suppliers: Supplier[]
   onClose: () => void
   onSaved: () => void
+  onSuppliersChanged: () => void
 }) => {
   const [saving, setSaving] = useState(false)
+  const [addingSupplier, setAddingSupplier] = useState(false)
+  const [savingSupplier, setSavingSupplier] = useState(false)
+  const [newSupplier, setNewSupplier] = useState({
+    name: "",
+    reference: "",
+    contact_email: "",
+  })
   const [listing, setListing] = useState<ProductSelection>({
     productId: null,
     variantId: null,
@@ -182,6 +198,39 @@ const OfferDrawer = ({
     (Number(form.procurement_days) || 0) +
     (Number(form.transit_days) || 0) +
     (Number(form.customs_days) || 0)
+
+  const createSupplier = async () => {
+    if (!newSupplier.name.trim()) {
+      toast.error("Give the supplier a name")
+      return
+    }
+    setSavingSupplier(true)
+    try {
+      const res = await fetchAdmin<{ supplier: Supplier }>(
+        "/admin/preorders/suppliers",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: newSupplier.name.trim(),
+            reference: newSupplier.reference.trim() || undefined,
+            contact_email: newSupplier.contact_email.trim() || undefined,
+          }),
+        }
+      )
+      // Select it immediately — you created it because you wanted it on
+      // this offer.
+      set("supplier_id", res.supplier.id)
+      setNewSupplier({ name: "", reference: "", contact_email: "" })
+      setAddingSupplier(false)
+      onSuppliersChanged()
+      toast.success(`${res.supplier.name} added`)
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not add that supplier")
+    } finally {
+      setSavingSupplier(false)
+    }
+  }
 
   const save = async () => {
     if (!listing.productId && !listing.variantId) {
@@ -244,19 +293,74 @@ const OfferDrawer = ({
           />
 
           <div className="flex flex-col gap-2">
-            <Label size="small">Supplier</Label>
-            <Select value={form.supplier_id} onValueChange={(v) => set("supplier_id", v)}>
-              <Select.Trigger>
-                <Select.Value placeholder="Choose a supplier" />
-              </Select.Trigger>
-              <Select.Content>
-                {suppliers.map((s) => (
-                  <Select.Item key={s.id} value={s.id}>
-                    {s.name}
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select>
+            <div className="flex items-center justify-between">
+              <Label size="small">Supplier</Label>
+              <button
+                type="button"
+                onClick={() => setAddingSupplier((v) => !v)}
+                className="txt-small text-ui-fg-interactive underline"
+              >
+                {addingSupplier ? "Cancel" : "+ New supplier"}
+              </button>
+            </div>
+
+            {addingSupplier ? (
+              // Inline rather than a separate screen: you discover you need
+              // a supplier halfway through pricing an offer, and being sent
+              // elsewhere means losing everything typed so far.
+              <div className="flex flex-col gap-2 rounded-md border border-ui-border-base p-3">
+                <Input
+                  value={newSupplier.name}
+                  onChange={(e) =>
+                    setNewSupplier((n) => ({ ...n, name: e.target.value }))
+                  }
+                  placeholder="Supplier name (e.g. B&H Photo)"
+                  autoFocus
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    value={newSupplier.reference}
+                    onChange={(e) =>
+                      setNewSupplier((n) => ({ ...n, reference: e.target.value }))
+                    }
+                    placeholder="Account / reference"
+                  />
+                  <Input
+                    value={newSupplier.contact_email}
+                    onChange={(e) =>
+                      setNewSupplier((n) => ({
+                        ...n,
+                        contact_email: e.target.value,
+                      }))
+                    }
+                    placeholder="Contact email"
+                  />
+                </div>
+                <Button size="small" onClick={createSupplier} isLoading={savingSupplier}>
+                  Add supplier
+                </Button>
+              </div>
+            ) : suppliers.length === 0 ? (
+              <div className="rounded-md border border-ui-border-base bg-ui-bg-subtle px-3 py-2">
+                <Text size="small" className="text-ui-fg-muted">
+                  No suppliers yet. Add the one you buy this from — it&apos;s how
+                  you find out later whose items actually arrive on time.
+                </Text>
+              </div>
+            ) : (
+              <Select value={form.supplier_id} onValueChange={(v) => set("supplier_id", v)}>
+                <Select.Trigger>
+                  <Select.Value placeholder="Choose a supplier" />
+                </Select.Trigger>
+                <Select.Content>
+                  {suppliers.map((s) => (
+                    <Select.Item key={s.id} value={s.id}>
+                      {s.name}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -681,6 +785,7 @@ const PreordersPage = () => {
           <Tabs.List>
             <Tabs.Trigger value="queue">Queue</Tabs.Trigger>
             <Tabs.Trigger value="offers">Offers</Tabs.Trigger>
+            <Tabs.Trigger value="suppliers">Suppliers</Tabs.Trigger>
           </Tabs.List>
 
           <Tabs.Content value="queue" className="pt-4">
@@ -827,6 +932,62 @@ const PreordersPage = () => {
               </Table>
             )}
           </Tabs.Content>
+          <Tabs.Content value="suppliers" className="pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <Text size="small" className="text-ui-fg-subtle">
+                Who you buy from. Recorded per offer so you can see whose
+                items actually arrive inside the promised window.
+              </Text>
+              <Button size="small" variant="secondary" onClick={() => setDrawerOpen(true)}>
+                Add via new offer
+              </Button>
+            </div>
+
+            {suppliers.length === 0 ? (
+              <Text size="small" className="text-ui-fg-muted">
+                No suppliers yet. Add one while creating an offer — the
+                &ldquo;+ New supplier&rdquo; link sits next to the supplier
+                field.
+              </Text>
+            ) : (
+              <Table>
+                <Table.Header>
+                  <Table.Row>
+                    <Table.HeaderCell>Name</Table.HeaderCell>
+                    <Table.HeaderCell>Country</Table.HeaderCell>
+                    <Table.HeaderCell>Reference</Table.HeaderCell>
+                    <Table.HeaderCell>Contact</Table.HeaderCell>
+                    <Table.HeaderCell>Offers</Table.HeaderCell>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {suppliers.map((sup) => {
+                    const count = (offers ?? []).filter(
+                      (o) => o.supplier_id === sup.id
+                    ).length
+                    return (
+                      <Table.Row key={sup.id}>
+                        <Table.Cell>
+                          <Text size="small">{sup.name}</Text>
+                          {!sup.is_active && (
+                            <Text size="small" className="text-ui-fg-muted">
+                              inactive
+                            </Text>
+                          )}
+                        </Table.Cell>
+                        <Table.Cell>
+                          {(sup.country_code ?? "").toUpperCase()}
+                        </Table.Cell>
+                        <Table.Cell>{sup.reference ?? "—"}</Table.Cell>
+                        <Table.Cell>{sup.contact_email ?? "—"}</Table.Cell>
+                        <Table.Cell>{count}</Table.Cell>
+                      </Table.Row>
+                    )
+                  })}
+                </Table.Body>
+              </Table>
+            )}
+          </Tabs.Content>
         </Tabs>
       </div>
 
@@ -835,6 +996,7 @@ const PreordersPage = () => {
         suppliers={suppliers}
         onClose={() => setDrawerOpen(false)}
         onSaved={reload}
+        onSuppliersChanged={reload}
       />
       <MilestoneDrawer
         preorder={openPreorder}
