@@ -611,17 +611,53 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     return obj?.[camel] ?? obj?.[pascal]
   }
 
+  /**
+   * Handle a webhook from Pulse.
+   *
+   * ── The webhook is a NUDGE, never the verdict ─────────────────────────
+   * Nothing authenticates this request. Medusa's /hooks/payment/:provider
+   * route has no auth middleware, Pulse stores a secretHash but we have not
+   * established how (or whether) it is transmitted, and we cannot change
+   * Pulse to find out. So the body is attacker-controlled input: anyone who
+   * can reach the endpoint could post {Status: 3} for a session id and,
+   * taken at face value, mark an unpaid order captured.
+   *
+   * Rather than trust it, we CONFIRM: the webhook tells us to go and look,
+   * and the answer comes from Pulse over an authenticated call we made
+   * ourselves. A forged webhook then achieves nothing, because the status
+   * it asserts is discarded. That closes the hole without Pulse changing.
+   *
+   * The cost is one extra request per webhook, and the risk noted below.
+   */
   async getWebhookActionAndData(
     payload: ProviderWebhookPayload["payload"]
   ): Promise<WebhookActionResult> {
     const event = payload.data as Record<string, any>
 
+    // Logged once per webhook so the header carrying Pulse's secretHash can
+    // be identified from real traffic. The moment we know its name and
+    // whether it is a plain value or an HMAC over the raw body, verification
+    // can be added here and the confirm-by-reading below becomes a second
+    // line of defence rather than the only one.
+    console.log(
+      "Pulse webhook headers:",
+      JSON.stringify(payload.headers ?? {}, null, 2)
+    )
     console.log("Pulse webhook received:", JSON.stringify(event, null, 2))
 
     try {
       // Pulse sends PascalCase: Status, Amount, Metadata, Id
       const status = this.getField(event, "status", "Status")
       const amount = this.getField(event, "amount", "Amount") || 0
+      // Pulse stores the customer's pimId on the payment as customerId, and
+      // sends it back on the event. It is what lets us authenticate the
+      // confirmation call below: a webhook has no customer in scope, and the
+      // static service token is exactly the credential that does not work
+      // against a paired Identity — so without this every webhook would fail
+      // to confirm and be ignored, which fails safe but never completes an
+      // order.
+      const pimId =
+        this.getField(event, "customerId", "CustomerId") || undefined
       const rawMetadata = this.getField(event, "metadata", "Metadata")
       const metadata = this.parseMetadata(rawMetadata)
       const sessionId = metadata?.session_id || ""
@@ -633,7 +669,12 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
         const pulseId = this.getField(event, "id", "Id")
         if (pulseId) {
           try {
-            const result = await this.pulseRequest("GET", `/Payments/${pulseId}`)
+            const result = await this.pulseRequest(
+              "GET",
+              `/Payments/${pulseId}`,
+              undefined,
+              pimId
+            )
             const fullPayment = result?.data?.value || result?.data || result
             const fullMetadata = this.parseMetadata(
               fullPayment?.metadata || fullPayment?.Metadata
@@ -654,7 +695,61 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
         }
       }
 
-      return this.buildWebhookResult(status, sessionId, amount)
+      // Confirm rather than believe. The status on the wire is ignored; the
+      // one we act on comes from a call we authenticated.
+      //
+      // Reading an unfinished payment makes Pulse mark it Cancelled, so a
+      // forged webhook can still disrupt a payment in flight. It cannot
+      // fabricate a successful one, which is the difference between a
+      // nuisance and a free order — and a cancelled session is recoverable:
+      // the storefront starts a new one rather than dead-ending.
+      const pulseId = this.getField(event, "id", "Id")
+      if (pulseId) {
+        try {
+          const result = await this.pulseRequest(
+            "GET",
+            `/Payments/${pulseId}`,
+            undefined,
+            pimId
+          )
+          const payment = result?.data?.value || result?.data || result
+          const confirmed = payment?.status ?? payment?.Status
+
+          if (confirmed !== undefined && confirmed !== null) {
+            if (String(confirmed) !== String(status)) {
+              console.warn(
+                `Pulse webhook: claimed status ${status} but Pulse reports ` +
+                  `${confirmed} for ${pulseId} — acting on ${confirmed}`
+              )
+            }
+            return this.buildWebhookResult(
+              confirmed,
+              sessionId,
+              Number(payment?.amount ?? amount)
+            )
+          }
+        } catch (err: any) {
+          // Could not confirm. NOT_SUPPORTED leaves the session untouched,
+          // which is the safe answer: the redirect path and any later status
+          // check still get their chance, and nothing moves on an unverified
+          // claim.
+          console.warn(
+            `Pulse webhook: could not confirm ${pulseId}, ignoring the event: ${err?.message ?? err}`
+          )
+          return {
+            action: PaymentActions.NOT_SUPPORTED,
+            data: { session_id: sessionId, amount: new BigNumber(amount) },
+          }
+        }
+      }
+
+      // No id to confirm against — an event we cannot verify is an event we
+      // do not act on.
+      console.warn("Pulse webhook: no payment id to confirm against, ignoring")
+      return {
+        action: PaymentActions.NOT_SUPPORTED,
+        data: { session_id: sessionId, amount: new BigNumber(amount) },
+      }
     } catch (err: any) {
       console.error("Pulse webhook processing error:", err.message)
       return {
