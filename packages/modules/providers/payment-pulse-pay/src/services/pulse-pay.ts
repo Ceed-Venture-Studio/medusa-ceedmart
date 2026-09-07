@@ -27,7 +27,7 @@ import type {
   UpdatePaymentOutput,
   WebhookActionResult,
 } from "@medusajs/framework/types"
-import { mintCustomerToken } from "../lib/payment-options"
+import { fetchPaymentOptions, mintCustomerToken } from "../lib/payment-options"
 
 type PulsePayOptions = {
   apiKey: string
@@ -226,6 +226,52 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
    */
   private tokenCache = new Map<string, { token: string; expiresAt: number }>()
 
+  /** Short-lived: gateways change on the Pulse dashboard, not on deploy, so
+   *  this must go stale quickly — but not once per payment. */
+  private channelCache: { value: string; expiresAt: number } | null = null
+
+  /**
+   * Which gateway to charge through.
+   *
+   * Configured value wins. Otherwise we ASK Pulse rather than omitting the
+   * field: Pulse is documented to resolve a single configured provider on
+   * its own, and did — until it started answering "Payment channel is
+   * required" for the same tenant with the same one provider. Naming it
+   * explicitly does not depend on that behaviour holding.
+   *
+   * Returns "" when it cannot be determined, which lets the request go out
+   * without a channel and Pulse give its own error, rather than us inventing
+   * a gateway.
+   */
+  private async resolveChannel(pimId: string): Promise<string> {
+    if (this.channel) {
+      return this.channel
+    }
+
+    if (this.channelCache && this.channelCache.expiresAt > Date.now()) {
+      return this.channelCache.value
+    }
+
+    const options = await fetchPaymentOptions(
+      this.baseUrl,
+      {
+        identityBaseUrl: this.identityBaseUrl,
+        tenantId: this.tenantId,
+        applicationId: this.applicationId,
+        apiKey: this.apiKey,
+      },
+      pimId
+    )
+
+    // Exactly one is the only case we can decide. With several, choosing
+    // would pick who takes the customer's money; with none, there is nothing
+    // to pick. Both are Pulse's to report.
+    const value = options && options.length === 1 ? options[0].provider : ""
+
+    this.channelCache = { value, expiresAt: Date.now() + 60_000 }
+    return value
+  }
+
   private async customerToken(pimId: string): Promise<string> {
     const cached = this.tokenCache.get(pimId)
     if (cached && cached.expiresAt > Date.now()) {
@@ -345,6 +391,8 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       )
     }
 
+    const channel = await this.resolveChannel(pimId)
+
     const successUrl = new URL(this.successRedirectUrl)
     successUrl.searchParams.set("session_id", sessionId || "")
     const failureUrl = new URL(this.failureRedirectUrl)
@@ -356,10 +404,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       amount: Number(amount),
       currency: (currency_code || "NGN").toUpperCase(),
       action: "initiate_charge",
-      // Omitted when unset so Pulse resolves the tenant's configured
-      // provider. Sending a hardcoded "paystack" would charge through a
-      // gateway the dashboard may no longer have configured.
-      ...(this.channel ? { channel: this.channel } : {}),
+      ...(channel ? { channel } : {}),
       metadata: JSON.stringify({
         session_id: sessionId,
       }),
