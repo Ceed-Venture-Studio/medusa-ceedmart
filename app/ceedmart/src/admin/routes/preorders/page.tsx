@@ -194,6 +194,111 @@ const OfferDrawer = ({
   })
   const [form, setForm] = useState<Record<string, string>>(BLANK_FORM)
 
+  // What the catalogue charges for this variant, in naira. Shown beside the
+  // offer price so nobody sets a pre-order price without knowing what the
+  // same item sells for on the shelf.
+  const [catalogPrice, setCatalogPrice] = useState<number | null>(null)
+
+  // Prefill when editing; clear when creating.
+  //
+  // Keyed on the offer id as well as `open`, or opening a second offer would
+  // still show the first one's figures.
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    if (!offer) {
+      setForm(BLANK_FORM)
+      setListing({ productId: null, variantId: null, label: "" })
+      setCatalogPrice(null)
+      return
+    }
+
+    const cost = (offer.cost_components ?? {}) as Record<string, number | null>
+    setForm({
+      supplier_id: offer.supplier_id ?? "",
+      price_naira: offer.locked_price ? String(offer.locked_price / 100) : "",
+      procurement_days: String(offer.procurement_days ?? 3),
+      transit_days: String(offer.transit_days ?? 7),
+      customs_days: String(offer.customs_days ?? 4),
+      condition: offer.condition ?? "new",
+      warranty_text: offer.warranty_text ?? "",
+      return_policy_text: offer.return_policy_text ?? "",
+      offer_expires_on: offer.offer_expires_at
+        ? new Date(offer.offer_expires_at).toISOString().slice(0, 10)
+        : "",
+      source_price_cents:
+        cost.source_price != null ? String(cost.source_price) : "",
+      fx_rate: offer.fx_rate != null ? String(offer.fx_rate) : "",
+      freight_naira: cost.freight != null ? String(cost.freight / 100) : "",
+      duty_naira: cost.duty != null ? String(cost.duty / 100) : "",
+      margin_naira: cost.margin != null ? String(cost.margin / 100) : "",
+    })
+
+    // The picker shows a label, so name the variant too — "Deye Inverter"
+    // and "Deye Inverter · 6kW" are different things to price.
+    setListing({
+      productId: offer.product_id ?? null,
+      variantId: offer.variant_id ?? null,
+      label: [offer.product_title, offer.variant_title]
+        .filter(Boolean)
+        .join(" · "),
+    })
+  }, [open, offer?.id])
+
+  // Look up what the catalogue charges for the selected listing.
+  //
+  // Queries the VARIANT, not the product: an offer usually stores only a
+  // variant_id — product_id is null on every one of ours — so going via the
+  // product would find nothing to look up. The variant endpoint returns its
+  // prices and its product in a single call either way.
+  //
+  // On create this also SEEDS the offer price. A pre-order is the same item
+  // with a longer wait, so the shelf price is the honest starting point, and
+  // retyping it from memory is how the two quietly drift apart.
+  useEffect(() => {
+    const { productId, variantId } = listing
+    if (!open || (!productId && !variantId)) {
+      setCatalogPrice(null)
+      return
+    }
+
+    let cancelled = false
+
+    const lookup = variantId
+      ? fetchAdmin<{ variants: any[] }>(
+          `/admin/product-variants?id=${variantId}&fields=id,product_id,*prices`
+        ).then((r) => (r?.variants ?? [])[0])
+      : fetchAdmin<{ product: any }>(
+          `/admin/products/${productId}?fields=*variants.prices`
+        ).then((r) => (r?.product?.variants ?? [])[0])
+
+    lookup
+      .then((variant: any) => {
+        if (cancelled) return
+        const ngn = (variant?.prices ?? []).find(
+          (x: any) => String(x.currency_code).toLowerCase() === "ngn"
+        )
+        const amount = ngn?.amount ?? null
+        setCatalogPrice(amount)
+
+        // Never overwrite something already typed, and never touch the agreed
+        // price on an existing offer.
+        if (amount != null && !offer) {
+          setForm((f) =>
+            f.price_naira ? f : { ...f, price_naira: String(amount) }
+          )
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogPrice(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, listing.productId, listing.variantId, offer?.id])
+
   const set = (key: string, value: string) =>
     setForm((f) => ({ ...f, [key]: value }))
 
@@ -320,7 +425,9 @@ const OfferDrawer = ({
     <Drawer open={open} onOpenChange={(v) => !v && onClose()}>
       <Drawer.Content>
         <Drawer.Header>
-          <Drawer.Title>New pre-order offer</Drawer.Title>
+          <Drawer.Title>
+            {offer ? "Edit pre-order offer" : "New pre-order offer"}
+          </Drawer.Title>
         </Drawer.Header>
         <Drawer.Body className="flex flex-col gap-4 overflow-y-auto">
           <ProductPicker
@@ -411,6 +518,33 @@ const OfferDrawer = ({
             <Text size="small" className="text-ui-fg-muted">
               All-inclusive. The customer is never asked to top up.
             </Text>
+            {(listing.productId || listing.variantId) && (
+              <Text size="small" className="text-ui-fg-subtle">
+                {catalogPrice != null ? (
+                  <>
+                    Catalogue price {naira(catalogPrice * 100)}
+                    {form.price_naira &&
+                      Number(form.price_naira) !== catalogPrice && (
+                        <>
+                          {" · "}
+                          <button
+                            type="button"
+                            className="underline"
+                            onClick={() => set("price_naira", String(catalogPrice))}
+                          >
+                            use it
+                          </button>
+                        </>
+                      )}
+                  </>
+                ) : (
+                  // Worth saying out loud: a variant with no price cannot be
+                  // sold normally either, so this usually means the listing
+                  // is incomplete rather than that the lookup failed.
+                  "This variant has no catalogue price set."
+                )}
+              </Text>
+            )}
           </div>
 
           <div>
@@ -523,7 +657,14 @@ const OfferDrawer = ({
             Cancel
           </Button>
           <Button onClick={save} isLoading={saving}>
-            Create draft
+            {!offer
+              ? "Create draft"
+              : offer.is_active
+                ? // A live offer is not a draft, and saying so would suggest
+                  // the edit is parked somewhere rather than changing what
+                  // customers see right now.
+                  "Save changes"
+                : "Save draft"}
           </Button>
         </Drawer.Footer>
       </Drawer.Content>
