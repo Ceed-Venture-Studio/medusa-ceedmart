@@ -250,6 +250,12 @@ export default defineConfig({
               // provider falls back to the hosted service when unset, so
               // production is unaffected by this being absent.
               baseUrl: process.env.PULSE_PAYMENT_BASE_URL,
+              // PaymentCore validates JWT signatures against the Identity it
+              // is paired with, so the provider mints a token per customer
+              // rather than carrying a static one. Both must point at the
+              // same environment.
+              identityBaseUrl: process.env.PULSE_IDENTITY_BASE_URL,
+              applicationId: process.env.PULSE_IDENTITY_APP_ID,
               channel: process.env.PULSE_PAYMENT_CHANNEL || "paystack",
               successRedirectUrl: process.env.STORE_CORS
                 ? process.env.STORE_CORS.split(",")[0] + "/ng/checkout?step=review"

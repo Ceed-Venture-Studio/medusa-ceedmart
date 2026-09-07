@@ -32,7 +32,16 @@ type PulsePayOptions = {
   apiKey: string
   serviceKey: string
   tenantId: string
+  /**
+   * Static service token. Legacy: kept only as a fallback for calls made
+   * with no customer in scope. Every customer-facing call now mints its own
+   * token — see customerToken().
+   */
   bearerToken: string
+  /** Pulse Identity, which mints the per-customer tokens PaymentCore wants. */
+  identityBaseUrl?: string
+  /** Sent as the body of the token-mint call. */
+  applicationId?: string
   channel?: string
   baseUrl?: string
   successRedirectUrl?: string
@@ -140,6 +149,8 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   private serviceKey: string
   private tenantId: string
   private bearerToken: string
+  private identityBaseUrl: string
+  private applicationId: string
   private channel: string
   private baseUrl: string
   private successRedirectUrl: string
@@ -178,6 +189,10 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     this.serviceKey = options.serviceKey
     this.tenantId = options.tenantId
     this.bearerToken = options.bearerToken
+    this.identityBaseUrl =
+      options.identityBaseUrl ||
+      "https://pulse-identity-manager-218803590341.europe-west1.run.app/api/v1"
+    this.applicationId = options.applicationId || ""
     this.channel = options.channel || "paystack"
     this.baseUrl = options.baseUrl || PULSE_PAY_BASE_URL
     this.successRedirectUrl =
@@ -186,16 +201,82 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       options.failureRedirectUrl || "http://localhost:8000/ng/checkout?step=payment"
   }
 
+  /**
+   * Mint a JWT for one customer.
+   *
+   * PaymentCore validates token signatures against the Identity instance it
+   * is paired with, so a token from anywhere else is rejected outright —
+   * `INVALID_SIGNATURE`, which reads like a bad credential rather than a
+   * token from the wrong place. A single static token in the environment
+   * cannot survive pointing the app at a different Identity, and expires
+   * besides. Minting per payment removes both problems.
+   *
+   * Needs only the tenant API key: Pulse documents this endpoint as the way
+   * "services like Pulse Payment obtain customer tokens without password
+   * authentication".
+   *
+   * Cached until shortly before expiry. Tokens last hours, a checkout makes
+   * several calls, and re-minting each one is a round trip for nothing.
+   */
+  private tokenCache = new Map<string, { token: string; expiresAt: number }>()
+
+  private async customerToken(pimId: string): Promise<string> {
+    const cached = this.tokenCache.get(pimId)
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.token
+    }
+
+    const url = `${this.identityBaseUrl}/tenants/${this.tenantId}/customers/${pimId}/token`
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": this.apiKey },
+      body: JSON.stringify({ applicationId: this.applicationId }),
+    })
+
+    const data = await response.json().catch(() => ({}))
+    const token = data?.payload?.value?.token || data?.data?.token
+
+    if (!response.ok || !token) {
+      throw new MedusaError(
+        MedusaError.Types.UNEXPECTED_STATE,
+        `Could not obtain a payment token for this customer: ${
+          data?.error?.message || response.statusText
+        }`
+      )
+    }
+
+    // Expire our copy a minute early so a token cannot lapse mid-request.
+    let expiresAt = Date.now() + 5 * 60 * 1000
+    try {
+      const claims = JSON.parse(
+        Buffer.from(token.split(".")[1], "base64").toString()
+      )
+      if (claims?.exp) expiresAt = claims.exp * 1000 - 60_000
+    } catch {
+      // Unreadable claims are not fatal — fall back to the short default.
+    }
+
+    this.tokenCache.set(pimId, { token, expiresAt })
+    return token
+  }
+
   private async pulseRequest(
     method: string,
     path: string,
-    body?: any
+    body?: any,
+    /**
+     * The customer this call is on behalf of. Falls back to the static
+     * service token when absent, which covers calls with no customer in
+     * scope — and is why bearerToken is still accepted.
+     */
+    pimId?: string
   ): Promise<any> {
     const url = `${this.baseUrl}${path}`
+    const token = pimId ? await this.customerToken(pimId) : this.bearerToken
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "*/*",
-      Authorization: `Bearer ${this.bearerToken}`,
+      Authorization: `Bearer ${token}`,
       "Service-Key": this.serviceKey,
       "X-API-Key": this.apiKey,
     }
@@ -278,7 +359,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       },
     }
 
-    const result = await this.pulseRequest("POST", "/Payments", payload)
+    const result = await this.pulseRequest("POST", "/Payments", payload, pimId)
     const payment = result?.data?.value
 
     if (!payment?.id) {
@@ -293,6 +374,11 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       data: {
         id: payment.id,
         session_id: sessionId,
+        // Kept so later calls can mint their own token. authorizePayment and
+        // friends are handed only `data` — there is no customer in scope by
+        // then, and without this they would fall back to the static service
+        // token, which is exactly what was failing.
+        pim_id: pimId,
         pulse_reference: payment.paymentReference,
         transaction_reference: payment.transactionReference,
         checkout_url: payment.action,
@@ -329,7 +415,12 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
 
     let pulseStatus: any = 0
     try {
-      const result = await this.pulseRequest("GET", `/Payments/${pulseId}`)
+      const result = await this.pulseRequest(
+        "GET",
+        `/Payments/${pulseId}`,
+        undefined,
+        input.data?.pim_id as string | undefined
+      )
       const payment = result?.data?.value || result?.data || result
       pulseStatus = payment?.status ?? payment?.Status ?? 0
     } catch (err: any) {
@@ -375,7 +466,12 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
 
     if (pulseId) {
       try {
-        const result = await this.pulseRequest("GET", `/Payments/${pulseId}`)
+        const result = await this.pulseRequest(
+          "GET",
+          `/Payments/${pulseId}`,
+          undefined,
+          input.data?.pim_id as string | undefined
+        )
         const payment = result?.data || result
         return {
           data: {
@@ -435,7 +531,12 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     }
 
     try {
-      const result = await this.pulseRequest("GET", `/Payments/${pulseId}`)
+      const result = await this.pulseRequest(
+        "GET",
+        `/Payments/${pulseId}`,
+        undefined,
+        input.data?.pim_id as string | undefined
+      )
       const payment = result?.data || result
       const pulseStatus = payment?.status ?? payment?.value?.status ?? 0
 
@@ -463,7 +564,12 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       return { data: input.data as Record<string, unknown> }
     }
 
-    const result = await this.pulseRequest("GET", `/Payments/${pulseId}`)
+    const result = await this.pulseRequest(
+      "GET",
+      `/Payments/${pulseId}`,
+      undefined,
+      input.data?.pim_id as string | undefined
+    )
     return { data: result?.data?.value || result?.data || result }
   }
 
