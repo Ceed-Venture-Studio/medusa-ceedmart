@@ -1,5 +1,6 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { LISTING_POLICY_MODULE } from "../../modules/listing-policy"
+import { syncOfferPrice } from "./sync-price"
 import { estimateDays } from "./estimate"
 
 // Keep listing_policy in step with a pre-order offer.
@@ -37,23 +38,46 @@ export const syncOfferPolicy = async (
 
   const [existing] = await policies.listListingPolicies(target, { take: 1 })
 
+  // config is rebuilt from the offer each time, so anything the policy is
+  // holding on its own behalf has to be carried across explicitly.
+  // displaced_price is the shelf price this offer is standing in front of,
+  // and losing it means never being able to put it back.
+  const carried =
+    existing?.config?.displaced_price !== undefined
+      ? { displaced_price: existing.config.displaced_price }
+      : {}
+
+  let policyId: string
   if (existing) {
     await policies.updateListingPolicies({
       id: existing.id,
       commerce_type: "preorder",
       is_active: offer.is_active === true,
       reference_id: offer.id,
+      config: { ...config, ...carried },
+    })
+    policyId = existing.id
+  } else {
+    const created = await policies.createListingPolicies({
+      ...target,
+      commerce_type: "preorder",
+      is_active: offer.is_active === true,
+      reference_id: offer.id,
       config,
     })
-    return
+    policyId = (Array.isArray(created) ? created[0] : created).id
   }
 
-  await policies.createListingPolicies({
-    ...target,
-    commerce_type: "preorder",
-    is_active: offer.is_active === true,
-    reference_id: offer.id,
-    config,
+  // The variant carries the offer price while the offer is live. Done after
+  // the policy exists, because that row is where the displaced price is kept.
+  await syncOfferPrice(container, offer, {
+    read: async () => {
+      const [row] = await policies.listListingPolicies({ id: policyId }, { take: 1 })
+      return row?.config ?? null
+    },
+    write: async (next) => {
+      await policies.updateListingPolicies({ id: policyId, config: next })
+    },
   })
 }
 
@@ -77,6 +101,19 @@ export const removeOfferPolicy = async (
   const [existing] = await policies.listListingPolicies(target, { take: 1 })
   if (!existing) return
   if (existing.reference_id !== offer.id) return
+
+  // Restore the shelf price before the policy row — which is where the
+  // displaced price is recorded — goes away with it.
+  await syncOfferPrice(
+    container,
+    { ...offer, is_active: false },
+    {
+      read: async () => existing.config ?? null,
+      write: async (next) => {
+        await policies.updateListingPolicies({ id: existing.id, config: next })
+      },
+    }
+  )
 
   await policies.deleteListingPolicies(existing.id)
 }
