@@ -51,6 +51,15 @@ if (process.env.PULSE_NOTIFICATION_SMS_TOKEN) {
   })
 }
 
+// Where customers actually are. Falls back to the first CORS origin only so
+// an unconfigured environment keeps its old behaviour rather than breaking
+// outright — but that fallback is what produced the wrong-port bug, so set
+// STOREFRONT_URL explicitly.
+const storefrontUrl =
+  process.env.STOREFRONT_URL ||
+  process.env.STORE_CORS?.split(",")[0] ||
+  "http://localhost:8000"
+
 const isProduction = process.env.NODE_ENV === "production"
 const redisUrl = process.env.REDIS_URL
 
@@ -262,12 +271,14 @@ export default defineConfig({
               // provider and records it. Set only when the tenant has more
               // than one, where Pulse refuses to choose.
               channel: process.env.PULSE_PAYMENT_CHANNEL,
-              successRedirectUrl: process.env.STORE_CORS
-                ? process.env.STORE_CORS.split(",")[0] + "/ng/checkout?step=review"
-                : "http://localhost:8000/ng/checkout?step=review",
-              failureRedirectUrl: process.env.STORE_CORS
-                ? process.env.STORE_CORS.split(",")[0] + "/ng/checkout?step=payment"
-                : "http://localhost:8000/ng/checkout?step=payment",
+              // STOREFRONT_URL, not STORE_CORS[0]. CORS is a list of origins
+              // ALLOWED to call us — order carries no meaning, and the first
+              // entry here was http://localhost:8000 while the storefront
+              // runs on 8100. A customer who paid was returned to a Docker
+              // service and saw {"detail":"Not Found"}, with the money taken
+              // and no order raised.
+              successRedirectUrl: `${storefrontUrl}/ng/checkout?step=review`,
+              failureRedirectUrl: `${storefrontUrl}/ng/checkout?step=payment`,
             },
           },
           // POS-only manual providers — cashier confirms receipt out-of-band.
