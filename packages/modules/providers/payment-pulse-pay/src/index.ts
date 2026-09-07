@@ -4,3 +4,9 @@ import PulsePayService from "./services/pulse-pay"
 export default ModuleProvider(Modules.PAYMENT, {
   services: [PulsePayService],
 })
+
+export {
+  fetchPaymentOptions,
+  mintCustomerToken,
+} from "./lib/payment-options"
+export type { PulsePaymentOption, PulseTokenConfig } from "./lib/payment-options"

@@ -27,6 +27,7 @@ import type {
   UpdatePaymentOutput,
   WebhookActionResult,
 } from "@medusajs/framework/types"
+import { mintCustomerToken } from "../lib/payment-options"
 
 type PulsePayOptions = {
   apiKey: string
@@ -231,22 +232,21 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       return cached.token
     }
 
-    const url = `${this.identityBaseUrl}/tenants/${this.tenantId}/customers/${pimId}/token`
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-API-Key": this.apiKey },
-      body: JSON.stringify({ applicationId: this.applicationId }),
-    })
-
-    const data = await response.json().catch(() => ({}))
-    const token = data?.payload?.value?.token || data?.data?.token
-
-    if (!response.ok || !token) {
+    let token: string
+    try {
+      token = await mintCustomerToken(
+        {
+          identityBaseUrl: this.identityBaseUrl,
+          tenantId: this.tenantId,
+          applicationId: this.applicationId,
+          apiKey: this.apiKey,
+        },
+        pimId
+      )
+    } catch (err: any) {
       throw new MedusaError(
         MedusaError.Types.UNEXPECTED_STATE,
-        `Could not obtain a payment token for this customer: ${
-          data?.error?.message || response.statusText
-        }`
+        `Could not obtain a payment token for this customer: ${err?.message ?? err}`
       )
     }
 
