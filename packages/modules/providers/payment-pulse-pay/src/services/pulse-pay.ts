@@ -30,7 +30,12 @@ import type {
 
 type PulsePayOptions = {
   apiKey: string
-  serviceKey: string
+  /**
+   * Our Paystack secret, encrypted by Pulse. Optional now: Pulse resolves
+   * the tenant's stored key server-side, so BYOK tenants never send one.
+   * Retained for tenants still passing their own.
+   */
+  serviceKey?: string
   tenantId: string
   /**
    * Static service token. Legacy: kept only as a fallback for calls made
@@ -42,6 +47,12 @@ type PulsePayOptions = {
   identityBaseUrl?: string
   /** Sent as the body of the token-mint call. */
   applicationId?: string
+  /**
+   * Gateway to charge through. Leave unset: Pulse then uses the tenant's
+   * single configured provider and records which one on the payment. Set it
+   * only when more than one is configured, where Pulse refuses to guess —
+   * it will not decide on its own which provider takes a customer's money.
+   */
   channel?: string
   baseUrl?: string
   successRedirectUrl?: string
@@ -146,7 +157,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   static identifier = "pulse-pay"
 
   private apiKey: string
-  private serviceKey: string
+  private serviceKey?: string
   private tenantId: string
   private bearerToken: string
   private identityBaseUrl: string
@@ -161,12 +172,6 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
         "Pulse Payment: apiKey is required"
-      )
-    }
-    if (!options.serviceKey) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        "Pulse Payment: serviceKey is required"
       )
     }
     if (!options.tenantId) {
@@ -193,7 +198,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       options.identityBaseUrl ||
       "https://pulse-identity-manager-218803590341.europe-west1.run.app/api/v1"
     this.applicationId = options.applicationId || ""
-    this.channel = options.channel || "paystack"
+    this.channel = options.channel || ""
     this.baseUrl = options.baseUrl || PULSE_PAY_BASE_URL
     this.successRedirectUrl =
       options.successRedirectUrl || "http://localhost:8000/ng/checkout?step=review"
@@ -277,8 +282,14 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       "Content-Type": "application/json",
       Accept: "*/*",
       Authorization: `Bearer ${token}`,
-      "Service-Key": this.serviceKey,
       "X-API-Key": this.apiKey,
+    }
+
+    // Only when the tenant still supplies its own key. Pulse holds the
+    // credential now, so sending one is both unnecessary and a way to charge
+    // through a key the dashboard no longer reflects.
+    if (this.serviceKey) {
+      headers["Service-Key"] = this.serviceKey
     }
 
     const response = await fetch(url, {
@@ -345,7 +356,10 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       amount: Number(amount),
       currency: (currency_code || "NGN").toUpperCase(),
       action: "initiate_charge",
-      channel: this.channel,
+      // Omitted when unset so Pulse resolves the tenant's configured
+      // provider. Sending a hardcoded "paystack" would charge through a
+      // gateway the dashboard may no longer have configured.
+      ...(this.channel ? { channel: this.channel } : {}),
       metadata: JSON.stringify({
         session_id: sessionId,
       }),

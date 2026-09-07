@@ -243,6 +243,8 @@ export default defineConfig({
             id: "pulse-pay",
             options: {
               apiKey: process.env.PULSE_PAYMENT_API_KEY || process.env.PULSE_IDENTITY_API_KEY,
+              // Optional. Pulse holds the gateway credential now; this is
+              // only for tenants still bringing their own.
               serviceKey: process.env.PULSE_PAYMENT_SERVICE_KEY,
               tenantId: process.env.PULSE_IDENTITY_TENANT_ID,
               bearerToken: process.env.PULSE_PAYMENT_BEARER_TOKEN,
@@ -256,7 +258,10 @@ export default defineConfig({
               // same environment.
               identityBaseUrl: process.env.PULSE_IDENTITY_BASE_URL,
               applicationId: process.env.PULSE_IDENTITY_APP_ID,
-              channel: process.env.PULSE_PAYMENT_CHANNEL || "paystack",
+              // Unset by default: Pulse resolves the tenant's configured
+              // provider and records it. Set only when the tenant has more
+              // than one, where Pulse refuses to choose.
+              channel: process.env.PULSE_PAYMENT_CHANNEL,
               successRedirectUrl: process.env.STORE_CORS
                 ? process.env.STORE_CORS.split(",")[0] + "/ng/checkout?step=review"
                 : "http://localhost:8000/ng/checkout?step=review",
