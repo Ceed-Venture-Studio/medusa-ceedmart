@@ -175,6 +175,7 @@ const OfferDrawer = ({
     condition: "new",
     warranty_text: "",
     return_policy_text: "",
+    offer_expires_on: "",
     source_price_cents: "",
     fx_rate: "",
     freight_naira: "",
@@ -256,6 +257,11 @@ const OfferDrawer = ({
           transit_days: Number(form.transit_days) || 0,
           customs_days: Number(form.customs_days) || 0,
           condition: form.condition,
+          // End of the chosen day: an offer expiring "on the 14th" should be
+          // buyable throughout the 14th, not dead as it begins.
+          offer_expires_at: form.offer_expires_on
+            ? new Date(`${form.offer_expires_on}T23:59:59`).toISOString()
+            : undefined,
           warranty_text: form.warranty_text.trim() || undefined,
           return_policy_text: form.return_policy_text.trim() || undefined,
           fx_rate: num("fx_rate"),
@@ -416,6 +422,20 @@ const OfferDrawer = ({
                 ))}
               </Select.Content>
             </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label size="small">Offer expires (optional)</Label>
+            <Input
+              type="date"
+              value={form.offer_expires_on}
+              onChange={(e) => set("offer_expires_on", e.target.value)}
+            />
+            <Text size="small" className="text-ui-fg-subtle">
+              After this date the offer stops being sellable. Separate from the
+              availability check, which expires on its own after a week —
+              this is for a price or supplier commitment with an end date.
+            </Text>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -726,6 +746,71 @@ const PreordersPage = () => {
     }
   }, [tick])
 
+  // How long a confirmation stays good. Mirrors the store route's
+  // PREORDER_MAX_VERIFICATION_AGE_DAYS, which refuses to sell past it — this
+  // is the number that decides whether a live offer is actually buyable.
+  const VERIFICATION_MAX_DAYS = 7
+
+  const daysSince = (iso: string | null): number | null => {
+    if (!iso) return null
+    return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  }
+
+  const patchOffer = async (offer: Offer, body: Record<string, unknown>, ok: string) => {
+    try {
+      await fetchAdmin(`/admin/preorders/offers/${offer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      toast.success(ok)
+      reload()
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update the offer")
+    }
+  }
+
+  // Re-confirming is its own action, deliberately.
+  //
+  // A confirmation goes stale after VERIFICATION_MAX_DAYS and the offer stops
+  // being sellable — quietly, from the shop's point of view. Publishing was
+  // the only thing that stamped a new check, so refreshing one meant
+  // unpublishing and republishing: an action that reads like taking the
+  // product down, to do something that is really "yes, the supplier still
+  // has it".
+  const reconfirm = (offer: Offer) =>
+    patchOffer(offer, { availability_verified: true }, "Availability re-confirmed")
+
+  const setExpiry = async (offer: Offer) => {
+    const current = offer.offer_expires_at
+      ? new Date(offer.offer_expires_at).toISOString().slice(0, 10)
+      : ""
+    const answer = window.prompt(
+      "Offer expires on (YYYY-MM-DD). Leave blank to remove the expiry.",
+      current
+    )
+    if (answer === null) return
+
+    const trimmed = answer.trim()
+    if (!trimmed) {
+      await patchOffer(offer, { offer_expires_at: null }, "Expiry removed")
+      return
+    }
+    const parsed = new Date(trimmed)
+    if (Number.isNaN(parsed.getTime())) {
+      toast.error("Use YYYY-MM-DD")
+      return
+    }
+    // End of the chosen day, so an offer expiring "on the 14th" is buyable
+    // throughout the 14th rather than dying at midnight as it begins.
+    parsed.setHours(23, 59, 59, 999)
+    await patchOffer(
+      offer,
+      { offer_expires_at: parsed.toISOString() },
+      `Expires ${parsed.toLocaleDateString()}`
+    )
+  }
+
   const publish = async (offer: Offer) => {
     try {
       await fetchAdmin(`/admin/preorders/offers/${offer.id}`, {
@@ -910,20 +995,69 @@ const PreordersPage = () => {
                           ) : (
                             <StatusBadge color="grey">Draft</StatusBadge>
                           )}
-                          {!o.availability_verified_at && (
+                          {(() => {
+                            const age = daysSince(o.availability_verified_at)
+                            if (age === null) {
+                              return (
+                                <Text size="small" className="text-ui-fg-muted">
+                                  Unverified
+                                </Text>
+                              )
+                            }
+                            const stale = age >= VERIFICATION_MAX_DAYS
+                            const soon = age >= VERIFICATION_MAX_DAYS - 2
+                            return (
+                              <Text
+                                size="small"
+                                className={
+                                  stale
+                                    ? "text-ui-fg-error"
+                                    : soon
+                                      ? "text-ui-tag-orange-text"
+                                      : "text-ui-fg-muted"
+                                }
+                              >
+                                {stale
+                                  ? `Stale — not sellable (${age}d)`
+                                  : age === 0
+                                    ? "Checked today"
+                                    : `Checked ${age}d ago`}
+                              </Text>
+                            )
+                          })()}
+                          {o.offer_expires_at && (
                             <Text size="small" className="text-ui-fg-muted">
-                              Unverified
+                              Expires{" "}
+                              {new Date(o.offer_expires_at).toLocaleDateString()}
                             </Text>
                           )}
                         </Table.Cell>
                         <Table.Cell>
-                          <Button
-                            size="small"
-                            variant={o.is_active ? "secondary" : "primary"}
-                            onClick={() => publish(o)}
-                          >
-                            {o.is_active ? "Unpublish" : "Verify & publish"}
-                          </Button>
+                          <div className="flex items-center gap-x-2">
+                            <Button
+                              size="small"
+                              variant={o.is_active ? "secondary" : "primary"}
+                              onClick={() => publish(o)}
+                            >
+                              {o.is_active ? "Unpublish" : "Verify & publish"}
+                            </Button>
+                            {o.is_active && (
+                              <Button
+                                size="small"
+                                variant="transparent"
+                                onClick={() => reconfirm(o)}
+                              >
+                                Re-confirm
+                              </Button>
+                            )}
+                            <Button
+                              size="small"
+                              variant="transparent"
+                              onClick={() => setExpiry(o)}
+                            >
+                              {o.offer_expires_at ? "Expiry" : "Set expiry"}
+                            </Button>
+                          </div>
                         </Table.Cell>
                       </Table.Row>
                     )
