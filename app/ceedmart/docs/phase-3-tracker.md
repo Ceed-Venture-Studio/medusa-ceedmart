@@ -250,3 +250,35 @@ redirect, both of which broke every page while every test stayed green. See the
 storefront's `scripts/README.md`.
 
 Neither is wired into CI yet.
+
+---
+
+## Turning the features on
+
+Every Phase 1–4 feature is behind a flag, and **all of them default off**.
+Nothing is broken when a new environment shows no pre-orders, no builds and
+no auctions — nothing has been switched on yet. The store routes return
+`not_found` and the pages render their unavailable state, which looks
+exactly like a bug and is not one.
+
+Set in the backend's `.env`, then restart:
+
+```
+FEATURE_PREORDER=true            # US pre-order listings, cart and checkout
+FEATURE_CUSTOM_BUILD=true        # build requests and quotes
+FEATURE_BUILD_CONFIGURATOR=true  # the guided PC/laptop configurator
+FEATURE_AUCTION=true             # auctions visible, bids accepted
+```
+
+Check what is live without guessing:
+
+```
+curl -s localhost:9100/store/feature-flags -H "x-publishable-api-key: <pk>"
+```
+
+They are environment variables rather than database rows on purpose: a flag
+that lives in the same database as the feature it guards cannot be used to
+turn that feature off when the database is the problem.
+
+`FEATURE_BUILD_CONFIGURATOR` is separate from `FEATURE_CUSTOM_BUILD` (D-06)
+so the assisted flow can ship before the self-serve configurator.
