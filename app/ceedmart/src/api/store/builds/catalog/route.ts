@@ -45,9 +45,6 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       label: option.label,
       brand: option.brand,
       variant_id: option.variant_id,
-      indicative_price:
-        option.indicative_price === null ? null : Number(option.indicative_price),
-      currency_code: option.currency_code,
       attributes: option.attributes ?? {},
       is_fixed: option.is_fixed,
     })

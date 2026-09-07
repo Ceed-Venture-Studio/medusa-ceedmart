@@ -1,4 +1,4 @@
-import { canSubmit, estimateTotal, evaluate, type Pick } from "./compatibility"
+import { canSubmit, evaluate, type Pick } from "./compatibility"
 import { DEFAULT_COMPATIBILITY_RULES } from "./default-rules"
 
 const pick = (
@@ -337,24 +337,5 @@ describe("acknowledging warnings", () => {
     )
 
     expect(canSubmit(clean, ["psu_margin"]).ok).toBe(true)
-  })
-})
-
-describe("estimates", () => {
-  it("totals picks by quantity", () => {
-    const total = estimateTotal(
-      [
-        pick("memory", {}, { option_id: "ram", quantity: 2 }),
-        pick("cpu", {}, { option_id: "cpu" }),
-      ],
-      { ram: 5_000_000, cpu: 30_000_000 }
-    )
-
-    expect(total).toBe(40_000_000)
-  })
-
-  it("treats an unpriced option as zero rather than failing", () => {
-    const total = estimateTotal([pick("cpu", {}, { option_id: "cpu" })], {})
-    expect(total).toBe(0)
   })
 })

@@ -24,8 +24,6 @@ type Body = {
   delivery_state?: string
   build_type?: "desktop" | "laptop"
   intended_use: string
-  budget_min?: number
-  budget_max?: number
   preferred_brands?: string[]
   required_software?: string[]
   performance_notes?: string
@@ -57,15 +55,6 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
 
   const buildType = body.build_type === "laptop" ? "laptop" : "desktop"
 
-  const min = Number(body.budget_min ?? 0)
-  const max = Number(body.budget_max ?? 0)
-  if (min && max && max < min) {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      "Your maximum budget can't be lower than your minimum"
-    )
-  }
-
   const svc: any = req.scope.resolve(BUILD_MODULE)
   const auth = (req as any).auth_context
 
@@ -78,8 +67,6 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     delivery_state: body.delivery_state?.trim() || null,
     build_type: buildType,
     intended_use: body.intended_use.trim(),
-    budget_min: min || null,
-    budget_max: max || null,
     preferred_brands: body.preferred_brands ?? null,
     required_software: body.required_software ?? null,
     performance_notes: body.performance_notes?.trim() || null,
@@ -102,7 +89,6 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     ``,
     `Type: ${buildType}`,
     `Use: ${request.intended_use}`,
-    `Budget: ${min ? `${min / 100}` : "—"} to ${max ? `${max / 100}` : "—"} NGN`,
     request.needed_by ? `Needed by: ${new Date(request.needed_by).toDateString()}` : "",
     request.performance_notes ? `Performance: ${request.performance_notes}` : "",
     request.notes ? `Notes: ${request.notes}` : "",

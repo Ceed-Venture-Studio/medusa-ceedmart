@@ -35,22 +35,6 @@ const json = (value: unknown): string =>
     ? "null"
     : `${q(JSON.stringify(value))}::jsonb`
 
-const nullableNumber = (value: number | null | undefined): string =>
-  value === null || value === undefined ? "null" : String(value)
-
-/**
- * The companion column for a model.bigNumber() field.
- *
- * `value` is stored as a STRING — Medusa writes {"value": "32000000",
- * "precision": 20} — because the whole point of the raw column is to survive
- * numbers JavaScript cannot hold exactly. Writing a JSON number here would
- * round-trip differently from every row the ORM has written.
- */
-const rawBigNumber = (value: number | null | undefined): string =>
-  value === null || value === undefined
-    ? "null"
-    : `jsonb_build_object('value', ${q(String(value))}, 'precision', 20)`
-
 export class Migration20260907120000 extends Migration {
   async up(): Promise<void> {
     // Build types
@@ -116,15 +100,12 @@ export class Migration20260907120000 extends Migration {
     for (const option of OPTIONS) {
       this.addSql(`
         insert into "build_component_option"
-          ("id", "category_id", "label", "brand", "indicative_price", "raw_indicative_price",
-           "currency_code", "attributes", "is_fixed", "is_active", "sort_order",
-           "created_at", "updated_at")
+          ("id", "category_id", "label", "brand", "attributes", "is_fixed",
+           "is_active", "sort_order", "created_at", "updated_at")
         select
           ${q(`bopt_seed_${option.category}_${option.label}`.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 60))},
           c."id", ${q(option.label)}, ${option.brand ? q(option.brand) : "null"},
-          ${nullableNumber(option.indicative_price)},
-          ${rawBigNumber(option.indicative_price)},
-          'ngn', ${json(option.attributes ?? null)}, false, true,
+          ${json(option.attributes ?? null)}, false, true,
           ${option.sort_order ?? 0}, now(), now()
         from "build_component_category" c
         where c."code" = ${q(option.category)} and c."deleted_at" is null
@@ -147,8 +128,6 @@ export class Migration20260907120000 extends Migration {
       this.addSql(`
         update "build_component_option" o
         set "brand" = ${option.brand ? q(option.brand) : "null"},
-            "indicative_price" = ${nullableNumber(option.indicative_price)},
-            "raw_indicative_price" = ${rawBigNumber(option.indicative_price)},
             "attributes" = ${json(option.attributes ?? null)},
             "sort_order" = ${option.sort_order ?? 0},
             "updated_at" = now()

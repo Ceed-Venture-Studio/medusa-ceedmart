@@ -143,7 +143,6 @@ export const csvHeader = (fields: AttributeField[]): string[] => [
   "label",
   "brand",
   "variant_id",
-  "indicative_price_naira",
   "is_fixed",
   "model_family",
   ...fields.map((f) => (f.unit ? `${f.key} (${f.unit})` : f.key)),
@@ -162,7 +161,6 @@ export const csvExampleRow = (
   example.label ?? "Example part",
   example.brand ?? "Brand",
   "",
-  "0",
   "no",
   "",
   ...fields.map((f) => {

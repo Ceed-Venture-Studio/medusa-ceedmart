@@ -133,8 +133,8 @@ const CHECKS: Check[] = [
   {
     module: "build", model: "BuildRequest",
     create: "createBuildRequests", list: "listBuildRequests", del: "deleteBuildRequests",
-    row: { reference: "VFY-AAAAAA", customer_name: "Verify", customer_email: "a@b.c", build_type: "desktop", intended_use: "verify", budget_min: 50_000_000, budget_max: 90_000_000, status: "submitted" },
-    verify: ["reference", "budget_min", "budget_max"],
+    row: { reference: "VFY-AAAAAA", customer_name: "Verify", customer_email: "a@b.c", build_type: "desktop", intended_use: "verify", status: "submitted" },
+    verify: ["reference", "customer_email", "intended_use"],
   },
   {
     module: "build", model: "BuildQuote",
@@ -184,8 +184,8 @@ const CHECKS: Check[] = [
   {
     module: "build_catalog", model: "ComponentOption",
     create: "createComponentOptions", list: "listComponentOptions", del: "deleteComponentOptions",
-    row: { category_id: REF, label: "Verify Part", indicative_price: 1_000_000, attributes: { socket: "AM5" }, is_active: true },
-    verify: ["label", "indicative_price", "attributes"],
+    row: { category_id: REF, label: "Verify Part", attributes: { socket: "AM5" }, is_active: true },
+    verify: ["label", "attributes", "is_active"],
   },
   {
     module: "build_catalog", model: "CompatibilityRule",
@@ -196,8 +196,8 @@ const CHECKS: Check[] = [
   {
     module: "build_catalog", model: "BuildConfiguration",
     create: "createBuildConfigurations", list: "listBuildConfigurations", del: "deleteBuildConfigurations",
-    row: { reference: "VFC-AAAAAA", build_type: "desktop", selections: [{ category_code: "cpu", option_id: REF }], estimated_total: 1_000_000 },
-    verify: ["reference", "estimated_total", "selections"],
+    row: { reference: "VFC-AAAAAA", build_type: "desktop", selections: [{ category_code: "cpu", option_id: REF }] },
+    verify: ["reference", "build_type", "selections"],
   },
 
   // ── Phase 4 — auctions ──────────────────────────────────────────────

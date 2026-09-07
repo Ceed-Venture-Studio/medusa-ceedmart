@@ -4,7 +4,6 @@ import { BUILD_CATALOG_MODULE } from "../../../../modules/build-catalog"
 import { generateReference } from "../../../../lib/build/quotes"
 import {
   canSubmit,
-  estimateTotal,
   evaluate,
 } from "../../../../lib/build-catalog/compatibility"
 import {
@@ -75,9 +74,9 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     )
   }
 
-  // §7.8 — a saved build can be duplicated and modified. Copying carries the
-  // selections but NOT the estimate: prices move, and showing last month's
-  // total on a fresh copy would be a quote we never made.
+  // §7.8 — a saved build can be duplicated and modified. Copying carries
+  // the selections and nothing else; availability moves, so a copy is a
+  // fresh starting point rather than a standing offer.
   let selections = body.selections
   let copiedFrom: string | null = null
   let buildType = body.build_type === "laptop" ? "laptop" : "desktop"
@@ -107,14 +106,14 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
 
   // Re-price and re-validate server-side rather than trusting whatever the
   // client last computed (§7.9).
-  const [rules, categories, resolved] = await Promise.all([
+  const [rules, categories, picks] = await Promise.all([
     loadRules(req.scope),
     loadCategories(req.scope, buildType as "desktop" | "laptop"),
     resolvePicks(req.scope, selections),
   ])
 
   const required = categories.filter((c) => c.is_required).map((c) => c.code)
-  const result = evaluate(resolved.picks, rules, required)
+  const result = evaluate(picks, rules, required)
 
   const configuration = await svc.createBuildConfigurations({
     reference: generateReference("BC"),
@@ -124,7 +123,6 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     build_type: buildType,
     model_family: body.model_family ?? null,
     selections,
-    estimated_total: estimateTotal(resolved.picks, resolved.prices),
     acknowledged_warnings: body.acknowledged_warnings ?? null,
     copied_from_id: copiedFrom,
   })

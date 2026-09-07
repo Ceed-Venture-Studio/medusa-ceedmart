@@ -1,7 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import {
   canSubmit,
-  estimateTotal,
   evaluate,
 } from "../../../../lib/build-catalog/compatibility"
 import {
@@ -32,14 +31,14 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
   const buildType = body.build_type === "laptop" ? "laptop" : "desktop"
   const selections = Array.isArray(body.selections) ? body.selections : []
 
-  const [rules, categories, resolved] = await Promise.all([
+  const [rules, categories, picks] = await Promise.all([
     loadRules(req.scope),
     loadCategories(req.scope, buildType),
     resolvePicks(req.scope, selections),
   ])
 
   const required = categories.filter((c) => c.is_required).map((c) => c.code)
-  const result = evaluate(resolved.picks, rules, required)
+  const result = evaluate(picks, rules, required)
   const submission = canSubmit(result, body.acknowledged_warnings ?? [])
 
   res.json({
@@ -53,7 +52,5 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     ),
     unacknowledged: submission.unacknowledged,
     can_submit: submission.ok,
-    estimated_total: estimateTotal(resolved.picks, resolved.prices),
-    currency_code: "ngn",
   })
 }

@@ -45,8 +45,6 @@ type BuildRequest = {
   delivery_state: string | null
   build_type: string
   intended_use: string
-  budget_min: number | null
-  budget_max: number | null
   required_software: string[] | null
   preferred_brands: string[] | null
   performance_notes: string | null
@@ -213,9 +211,6 @@ const RequestDrawer = ({
             <Text size="small" className="text-ui-fg-muted">
               {request.customer_email}
               {request.customer_phone ? ` · ${request.customer_phone}` : ""}
-            </Text>
-            <Text size="small" className="text-ui-fg-muted">
-              Budget {naira(request.budget_min)} – {naira(request.budget_max)}
             </Text>
           </div>
 
@@ -388,9 +383,6 @@ const QuoteDrawer = ({
             <Text size="small" className="text-ui-fg-subtle">
               {request.intended_use}
             </Text>
-            <Text size="small" className="text-ui-fg-muted">
-              Budget {naira(request.budget_min)} – {naira(request.budget_max)}
-            </Text>
             {request.required_software?.length ? (
               <Text size="small" className="text-ui-fg-muted">
                 Must run: {request.required_software.join(", ")}
@@ -414,7 +406,7 @@ const QuoteDrawer = ({
               <Input
                 value={changeNote}
                 onChange={(e) => setChangeNote(e.target.value)}
-                placeholder="Swapped the GPU for a 4070 Super to stay in budget"
+                placeholder="Swapped the GPU for a 4070 Super — better value at this spec"
               />
             </div>
           )}
@@ -782,7 +774,6 @@ const BuildsPage = () => {
                     <Table.HeaderCell>Ref</Table.HeaderCell>
                     <Table.HeaderCell>Customer</Table.HeaderCell>
                     <Table.HeaderCell>Wants</Table.HeaderCell>
-                    <Table.HeaderCell>Budget</Table.HeaderCell>
                     <Table.HeaderCell>Status</Table.HeaderCell>
                     <Table.HeaderCell>&nbsp;</Table.HeaderCell>
                   </Table.Row>
@@ -806,9 +797,6 @@ const BuildsPage = () => {
                         <Text size="small" className="text-ui-fg-muted">
                           {r.intended_use}
                         </Text>
-                      </Table.Cell>
-                      <Table.Cell>
-                        {naira(r.budget_min)} – {naira(r.budget_max)}
                       </Table.Cell>
                       <Table.Cell>
                         {r.waiting_on_us ? (

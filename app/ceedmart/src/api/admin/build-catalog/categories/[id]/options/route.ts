@@ -18,7 +18,6 @@ type Body = {
   brand?: string
   variant_id?: string
   product_id?: string
-  indicative_price?: number
   is_fixed?: boolean
   model_family?: string
   sort_order?: number
@@ -55,11 +54,7 @@ export const GET = async (
       ...category,
       attribute_schema: category.attribute_schema ?? schemaFor(category.code),
     },
-    options: (options as any[]).map((o) => ({
-      ...o,
-      indicative_price:
-        o.indicative_price === null ? null : Number(o.indicative_price),
-    })),
+    options,
   })
 }
 
@@ -96,8 +91,6 @@ export const POST = async (
     brand: body.brand?.trim() || null,
     variant_id: body.variant_id?.trim() || null,
     product_id: body.product_id?.trim() || null,
-    indicative_price:
-      body.indicative_price == null ? null : Math.round(Number(body.indicative_price)),
     is_fixed: body.is_fixed === true,
     model_family: body.model_family?.trim() || null,
     sort_order: body.sort_order ?? 0,

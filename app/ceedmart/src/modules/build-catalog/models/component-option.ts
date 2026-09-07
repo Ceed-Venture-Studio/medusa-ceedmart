@@ -25,11 +25,6 @@ const ComponentOption = model
     variant_id: model.text().nullable(),
     product_id: model.text().nullable(),
 
-    // Kobo. Snapshot for the estimate only — the binding number comes from
-    // the quote a specialist issues (§7.9).
-    indicative_price: model.bigNumber().nullable(),
-    currency_code: model.text().default("ngn"),
-
     // { socket, chipset, memory_type, memory_speed, form_factor, tdp,
     //   wattage, length_mm, height_mm, pcie_version, interface, m2_slots, … }
     attributes: model.json().nullable(),

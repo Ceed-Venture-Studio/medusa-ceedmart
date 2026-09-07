@@ -7,8 +7,12 @@ import { model } from "@medusajs/framework/utils"
 // and modified".
 //
 // §7.8 also says reordering a historical build creates a NEW request,
-// because price and availability move — so a configuration is never
+// because availability and cost move — so a configuration is never
 // re-submitted, only copied.
+//
+// A configuration carries no total. What the machine costs is settled by
+// the quote a specialist issues, not by anything we can compute from the
+// parts list.
 
 const BuildConfiguration = model
   .define("BuildConfiguration", {
@@ -26,11 +30,6 @@ const BuildConfiguration = model
 
     // [{ category_code, option_id, quantity }]
     selections: model.json(),
-
-    // Last computed estimate, kobo. Advisory only — §7.9 says estimates are
-    // not binding until a quote is accepted.
-    estimated_total: model.bigNumber().nullable(),
-    currency_code: model.text().default("ngn"),
 
     // Warnings the customer acknowledged and chose to override (§7.3).
     // Recorded so a later dispute can show what they were told.

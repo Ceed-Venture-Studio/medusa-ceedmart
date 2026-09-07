@@ -105,7 +105,7 @@ export const POST = async (
     tax_total: totals.tax_total,
     delivery_total: totals.delivery_total,
     total: totals.total,
-    currency_code: request.currency_code ?? "ngn",
+    currency_code: "ngn",
     build_days: body.build_days ?? null,
     warranty_text: body.warranty_text ?? null,
     cancellation_terms: body.cancellation_terms ?? null,

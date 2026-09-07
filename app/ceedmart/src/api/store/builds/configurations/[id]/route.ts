@@ -49,17 +49,10 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     )
   }
 
-  const resolved = await resolvePicks(req.scope, configuration.selections ?? [])
+  const picks = await resolvePicks(req.scope, configuration.selections ?? [])
 
   res.json({
-    configuration: {
-      ...configuration,
-      estimated_total:
-        configuration.estimated_total === null
-          ? null
-          : Number(configuration.estimated_total),
-      picks: resolved.picks,
-    },
+    configuration: { ...configuration, picks },
   })
 }
 
@@ -96,14 +89,14 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
   // Re-validate at submission. Availability and the rule set may both have
   // moved since the configuration was saved (§7.9), and the client's own
   // verdict is never the authority.
-  const [rules, categories, resolved] = await Promise.all([
+  const [rules, categories, picks] = await Promise.all([
     loadRules(req.scope),
     loadCategories(req.scope, configuration.build_type),
     resolvePicks(req.scope, configuration.selections ?? []),
   ])
 
   const required = categories.filter((c: any) => c.is_required).map((c: any) => c.code)
-  const result = evaluate(resolved.picks, rules, required)
+  const result = evaluate(picks, rules, required)
   const acknowledged =
     body.acknowledged_warnings ?? configuration.acknowledged_warnings ?? []
   const submission = canSubmit(result, acknowledged)
@@ -124,7 +117,7 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
 
   // The configuration, written out as something a specialist can read
   // without opening the configurator.
-  const spec = resolved.picks
+  const spec = picks
     .map((p) => `${p.category_code}: ${p.label}${p.quantity > 1 ? ` ×${p.quantity}` : ""}`)
     .join("\n")
 
@@ -143,10 +136,6 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
     metadata: {
       configuration_reference: configuration.reference,
       acknowledged_warnings: acknowledged,
-      estimated_total:
-        configuration.estimated_total === null
-          ? null
-          : Number(configuration.estimated_total),
     },
   })
 
@@ -169,7 +158,7 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
         (acknowledged.length
           ? `Acknowledged warnings: ${acknowledged.join(", ")}\n\n`
           : "") +
-        `Estimate shown to them: ₦${(Number(configuration.estimated_total ?? 0) / 100).toLocaleString()}\n\n— Ceedmart`,
+        `Price this and send them a quote.\n\n— Ceedmart`,
     },
   })
 

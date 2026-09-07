@@ -294,15 +294,3 @@ export const canSubmit = (
     unacknowledged,
   }
 }
-
-/** Indicative total for a configuration, kobo. Advisory only — §7.9 makes
- *  estimates non-binding until a quote is accepted. */
-export const estimateTotal = (
-  picks: Pick[],
-  priceByOption: Record<string, number | null | undefined>
-): number =>
-  picks.reduce((acc, pick) => {
-    const price = Number(priceByOption[pick.option_id] ?? 0)
-    if (!Number.isFinite(price)) return acc
-    return acc + price * Math.max(1, pick.quantity || 1)
-  }, 0)

@@ -101,7 +101,7 @@ export const POST = async (
   // Columns the schema does not model, reported once rather than per row.
   const knownKeys = new Set([
     "label", "brand", "variant_id", "product_id",
-    "indicative_price_naira", "is_fixed", "model_family", "sort_order",
+    "is_fixed", "model_family", "sort_order",
     ...(fields as AttributeField[]).map((f) => f.key),
   ])
   const ignoredColumns = headers
@@ -140,16 +140,6 @@ export const POST = async (
       .filter((x) => x.severity === "warning")
       .map((x) => x.message)
 
-    // Price arrives in naira for the human filling the sheet; everything
-    // stored is kobo.
-    let price: number | null = null
-    const rawPrice = (row.indicative_price_naira ?? "").replace(/[^\d.]/g, "")
-    if (rawPrice) {
-      const n = Number(rawPrice)
-      if (Number.isFinite(n) && n >= 0) price = Math.round(n * 100)
-      else errors.push(`Price "${row.indicative_price_naira}" is not a number`)
-    }
-
     const match = byLabel.get(label.toLowerCase())
     const action: RowResult["action"] = errors.length
       ? "skip"
@@ -167,7 +157,6 @@ export const POST = async (
       brand: row.brand?.trim() || null,
       variant_id: row.variant_id?.trim() || null,
       product_id: row.product_id?.trim() || null,
-      indicative_price: price,
       is_fixed: ["yes", "true", "y", "1"].includes(
         (row.is_fixed ?? "").trim().toLowerCase()
       ),

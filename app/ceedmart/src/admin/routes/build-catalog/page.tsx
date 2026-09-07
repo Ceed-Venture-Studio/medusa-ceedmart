@@ -63,7 +63,6 @@ type Option = {
   label: string
   brand: string | null
   variant_id: string | null
-  indicative_price: number | null
   is_fixed: boolean
   model_family: string | null
   attributes: Record<string, unknown>
@@ -90,9 +89,6 @@ type ImportResult = {
   ignored_columns: string[]
   results: ImportRow[]
 }
-
-const naira = (kobo: number | null | undefined) =>
-  kobo == null ? "—" : `₦${(Number(kobo) / 100).toLocaleString()}`
 
 const showAttr = (v: unknown): string =>
   Array.isArray(v) ? v.join(", ") : v === true ? "Yes" : v === false ? "No" : String(v ?? "—")
@@ -135,9 +131,6 @@ const OptionDrawer = ({
             label: form.label.trim(),
             brand: form.brand?.trim() || undefined,
             variant_id: form.variant_id?.trim() || undefined,
-            indicative_price: form.price
-              ? Math.round(Number(form.price) * 100)
-              : undefined,
             is_fixed: form.is_fixed === "yes",
             model_family: form.model_family?.trim() || undefined,
             attributes: attrs,
@@ -173,22 +166,12 @@ const OptionDrawer = ({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1">
-              <Text size="small" className="text-ui-fg-muted">Brand</Text>
-              <Input
-                value={form.brand ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Text size="small" className="text-ui-fg-muted">Indicative price (₦)</Text>
-              <Input
-                value={form.price ?? ""}
-                inputMode="numeric"
-                onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-              />
-            </div>
+          <div className="flex flex-col gap-1">
+            <Text size="small" className="text-ui-fg-muted">Brand</Text>
+            <Input
+              value={form.brand ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))}
+            />
           </div>
 
           <div className="flex items-center justify-between rounded-md border border-ui-border-base px-3 py-2">
@@ -626,17 +609,12 @@ const BuildCatalogPage = () => {
               ) : (
                 options.map((o) => (
                   <div key={o.id} className="flex flex-col gap-1 border-b border-ui-border-base pb-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Text size="small">
-                        {o.label}
-                        {o.is_fixed && (
-                          <Badge size="2xsmall" className="ml-2">Fixed</Badge>
-                        )}
-                      </Text>
-                      <Text size="small" className="tabular-nums">
-                        {naira(o.indicative_price)}
-                      </Text>
-                    </div>
+                    <Text size="small">
+                      {o.label}
+                      {o.is_fixed && (
+                        <Badge size="2xsmall" className="ml-2">Fixed</Badge>
+                      )}
+                    </Text>
                     <Text size="small" className="text-ui-fg-muted">
                       {openCategory.attribute_schema
                         .filter((f) => o.attributes?.[f.key] !== undefined)

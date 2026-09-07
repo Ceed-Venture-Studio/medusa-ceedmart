@@ -31,12 +31,6 @@ const BuildRequest = model
     build_type: model.text().default("desktop"),
     // Free-form intended use: gaming, video editing, CAD, office, trading.
     intended_use: model.text(),
-    // Budget in kobo. A range rather than a figure, because a customer who
-    // has not priced components does not have a figure — and asking for one
-    // makes them guess low and feel misled later.
-    budget_min: model.bigNumber().nullable(),
-    budget_max: model.bigNumber().nullable(),
-    currency_code: model.text().default("ngn"),
 
     preferred_brands: model.json().nullable(),
     // Applications or games they need it to run — more useful than any

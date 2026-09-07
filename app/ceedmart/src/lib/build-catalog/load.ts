@@ -49,17 +49,16 @@ export const loadCategories = async (
 export const resolvePicks = async (
   container: MedusaContainer,
   selections: { category_code: string; option_id: string; quantity?: number }[]
-): Promise<{ picks: Pick[]; prices: Record<string, number | null> }> => {
+): Promise<Pick[]> => {
   const svc: any = container.resolve(BUILD_CATALOG_MODULE)
 
   const optionIds = [...new Set(selections.map((s) => s.option_id))].filter(Boolean)
-  if (!optionIds.length) return { picks: [], prices: {} }
+  if (!optionIds.length) return []
 
   const options = await svc.listComponentOptions({ id: optionIds }, { take: 200 })
   const byId = new Map<string, any>((options as any[]).map((o) => [o.id, o]))
 
   const picks: Pick[] = []
-  const prices: Record<string, number | null> = {}
 
   for (const selection of selections) {
     const option = byId.get(selection.option_id)
@@ -72,12 +71,7 @@ export const resolvePicks = async (
       quantity: Math.max(1, Number(selection.quantity) || 1),
       attributes: option.attributes ?? null,
     })
-
-    prices[option.id] =
-      option.indicative_price === null || option.indicative_price === undefined
-        ? null
-        : Number(option.indicative_price)
   }
 
-  return { picks, prices }
+  return picks
 }

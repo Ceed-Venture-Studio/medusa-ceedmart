@@ -13,8 +13,8 @@ import {
 // (BRD §7.3, §7.4).
 //
 // Idempotent — safe to re-run after adding a rule. Only the slots and rules
-// are seeded; the OPTIONS in each slot are real parts with real prices and
-// belong to whoever maintains the catalogue, not to a script.
+// are seeded; the OPTIONS in each slot are real parts, and they belong to
+// whoever maintains the catalogue, not to a script.
 //
 //   npx medusa exec ./src/scripts/seed-build-catalog.ts
 
@@ -69,7 +69,7 @@ export default async function seedBuildCatalog({ container }: ExecArgs) {
   // Matched on (category, label) because that is what a person means by
   // "the same part"; ids differ between environments and always will.
   //
-  // Existing rows are UPDATED rather than skipped, so correcting a price or
+  // Existing rows are UPDATED rather than skipped, so correcting a spec or
   // an attribute here reaches every environment on the next run. Options
   // ops has added by hand are left alone — nothing is deleted.
   const categoriesByCode = new Map<string, any>()
@@ -92,7 +92,6 @@ export default async function seedBuildCatalog({ container }: ExecArgs) {
       category_id: category.id,
       label: option.label,
       brand: option.brand ?? null,
-      indicative_price: option.indicative_price ?? null,
       attributes: option.attributes ?? null,
       sort_order: option.sort_order ?? 0,
       is_active: true,

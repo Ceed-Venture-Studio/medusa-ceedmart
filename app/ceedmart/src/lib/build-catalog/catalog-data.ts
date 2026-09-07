@@ -43,8 +43,6 @@ export type CatalogOption = {
   category: string
   label: string
   brand?: string | null
-  /** Kobo. Indicative only — §7.9 makes estimates non-binding. */
-  indicative_price?: number | null
   attributes?: Record<string, unknown>
   sort_order?: number
 }
@@ -268,8 +266,10 @@ export const CATEGORIES: CatalogCategory[] = [
 
 // ─── Parts ────────────────────────────────────────────────────────────────
 //
-// Prices are kobo and indicative. They exist so a slot is not empty on a
-// fresh install; ops replaces them with real ones.
+// No prices. What a build costs depends on what the parts cost on the day
+// we source them, so the catalogue describes parts and a specialist quotes
+// the machine. A number here would be a guess wearing the clothes of a
+// price.
 
 const BRANDS = ["Apple", "Dell", "HP", "Lenovo", "ASUS", "Acer", "Custom build"]
 
@@ -279,7 +279,6 @@ export const OPTIONS: CatalogOption[] = [
     category: "brand",
     label: name,
     brand: name,
-    indicative_price: 0,
     attributes: { brand: name },
     sort_order: (i + 1) * 10,
   })),
@@ -313,7 +312,6 @@ export const OPTIONS: CatalogOption[] = [
     category: "cpu",
     label: "Apple M3",
     brand: "Apple",
-    indicative_price: 0,
     attributes: { brands: ["Apple"], cores: 8, integrated_graphics: true },
     sort_order: 10,
   },
@@ -321,7 +319,6 @@ export const OPTIONS: CatalogOption[] = [
     category: "cpu",
     label: "Apple M3 Pro",
     brand: "Apple",
-    indicative_price: 0,
     attributes: { brands: ["Apple"], cores: 12, integrated_graphics: true },
     sort_order: 20,
   },
@@ -329,14 +326,12 @@ export const OPTIONS: CatalogOption[] = [
     category: "cpu",
     label: "Apple M3 Max",
     brand: "Apple",
-    indicative_price: 0,
     attributes: { brands: ["Apple"], cores: 16, integrated_graphics: true },
     sort_order: 30,
   },
   {
     category: "cpu",
     label: "Intel Core i5-13400F",
-    indicative_price: 22000000,
     attributes: {
       brands: BRANDS.filter((b) => b !== "Apple"),
       socket: "LGA1700",
@@ -349,7 +344,6 @@ export const OPTIONS: CatalogOption[] = [
   {
     category: "cpu",
     label: "Intel Core i7-13700",
-    indicative_price: 38000000,
     attributes: {
       brands: BRANDS.filter((b) => b !== "Apple"),
       socket: "LGA1700",
@@ -362,7 +356,6 @@ export const OPTIONS: CatalogOption[] = [
   {
     category: "cpu",
     label: "AMD Ryzen 5 7600X",
-    indicative_price: 24000000,
     attributes: {
       brands: BRANDS.filter((b) => b !== "Apple"),
       socket: "AM5",
@@ -375,7 +368,6 @@ export const OPTIONS: CatalogOption[] = [
   {
     category: "cpu",
     label: "AMD Ryzen 7 7700X",
-    indicative_price: 32000000,
     attributes: {
       brands: BRANDS.filter((b) => b !== "Apple"),
       socket: "AM5",
@@ -387,26 +379,26 @@ export const OPTIONS: CatalogOption[] = [
   },
 
   // Memory
-  { category: "memory", label: "8GB", indicative_price: 3500000, attributes: { capacity_gb: 8 }, sort_order: 10 },
-  { category: "memory", label: "16GB", indicative_price: 6500000, attributes: { capacity_gb: 16 }, sort_order: 20 },
-  { category: "memory", label: "32GB", indicative_price: 11000000, attributes: { capacity_gb: 32 }, sort_order: 30 },
-  { category: "memory", label: "64GB", indicative_price: 21000000, attributes: { capacity_gb: 64 }, sort_order: 40 },
+  { category: "memory", label: "8GB", attributes: { capacity_gb: 8 }, sort_order: 10 },
+  { category: "memory", label: "16GB", attributes: { capacity_gb: 16 }, sort_order: 20 },
+  { category: "memory", label: "32GB", attributes: { capacity_gb: 32 }, sort_order: 30 },
+  { category: "memory", label: "64GB", attributes: { capacity_gb: 64 }, sort_order: 40 },
 
   // Storage
-  { category: "storage", label: "256GB SSD", indicative_price: 4000000, attributes: { capacity_gb: 256, interface: "NVMe" }, sort_order: 10 },
-  { category: "storage", label: "512GB SSD", indicative_price: 6000000, attributes: { capacity_gb: 512, interface: "NVMe" }, sort_order: 20 },
-  { category: "storage", label: "1TB SSD", indicative_price: 9500000, attributes: { capacity_gb: 1000, interface: "NVMe" }, sort_order: 30 },
-  { category: "storage", label: "2TB SSD", indicative_price: 19000000, attributes: { capacity_gb: 2000, interface: "NVMe" }, sort_order: 40 },
+  { category: "storage", label: "256GB SSD", attributes: { capacity_gb: 256, interface: "NVMe" }, sort_order: 10 },
+  { category: "storage", label: "512GB SSD", attributes: { capacity_gb: 512, interface: "NVMe" }, sort_order: 20 },
+  { category: "storage", label: "1TB SSD", attributes: { capacity_gb: 1000, interface: "NVMe" }, sort_order: 30 },
+  { category: "storage", label: "2TB SSD", attributes: { capacity_gb: 2000, interface: "NVMe" }, sort_order: 40 },
 
   // Graphics
-  { category: "gpu", label: "Integrated graphics", indicative_price: 0, attributes: { tier: 0 }, sort_order: 10 },
-  { category: "gpu", label: "NVIDIA RTX 4060", indicative_price: 38000000, attributes: { brands: BRANDS.filter((b) => b !== "Apple"), tier: 3, recommended_psu_watts: 550 }, sort_order: 20 },
-  { category: "gpu", label: "NVIDIA RTX 4070 Super", indicative_price: 65000000, attributes: { brands: BRANDS.filter((b) => b !== "Apple"), tier: 5, recommended_psu_watts: 750 }, sort_order: 30 },
+  { category: "gpu", label: "Integrated graphics", attributes: { tier: 0 }, sort_order: 10 },
+  { category: "gpu", label: "NVIDIA RTX 4060", attributes: { brands: BRANDS.filter((b) => b !== "Apple"), tier: 3, recommended_psu_watts: 550 }, sort_order: 20 },
+  { category: "gpu", label: "NVIDIA RTX 4070 Super", attributes: { brands: BRANDS.filter((b) => b !== "Apple"), tier: 5, recommended_psu_watts: 750 }, sort_order: 30 },
 
-  { category: "gpu_ram", label: "4GB", indicative_price: 0, attributes: { vram_gb: 4 }, sort_order: 10 },
-  { category: "gpu_ram", label: "8GB", indicative_price: 0, attributes: { vram_gb: 8 }, sort_order: 20 },
-  { category: "gpu_ram", label: "12GB", indicative_price: 0, attributes: { vram_gb: 12 }, sort_order: 30 },
-  { category: "gpu_ram", label: "16GB", indicative_price: 0, attributes: { vram_gb: 16 }, sort_order: 40 },
+  { category: "gpu_ram", label: "4GB", attributes: { vram_gb: 4 }, sort_order: 10 },
+  { category: "gpu_ram", label: "8GB", attributes: { vram_gb: 8 }, sort_order: 20 },
+  { category: "gpu_ram", label: "12GB", attributes: { vram_gb: 12 }, sort_order: 30 },
+  { category: "gpu_ram", label: "16GB", attributes: { vram_gb: 16 }, sort_order: 40 },
 
   // Screen size — laptop only, and required there.
   { category: "laptop_display", label: "13 inch", attributes: { size_in: 13 }, sort_order: 10 },
@@ -416,25 +408,25 @@ export const OPTIONS: CatalogOption[] = [
   { category: "laptop_display", label: "17 inch", attributes: { size_in: 17 }, sort_order: 50 },
 
   // Operating system. macOS only on Apple; Windows and Linux elsewhere.
-  { category: "operating_system", label: "macOS", indicative_price: 0, attributes: { brands: ["Apple"], family: "macOS" }, sort_order: 10 },
-  { category: "operating_system", label: "Windows 11 Home", indicative_price: 7000000, attributes: { brands: BRANDS.filter((b) => b !== "Apple"), family: "Windows", edition: "Home", requires_tpm: true }, sort_order: 20 },
-  { category: "operating_system", label: "Windows 11 Pro", indicative_price: 11000000, attributes: { brands: BRANDS.filter((b) => b !== "Apple"), family: "Windows", edition: "Pro", requires_tpm: true }, sort_order: 30 },
-  { category: "operating_system", label: "Ubuntu 24.04 LTS", indicative_price: 0, attributes: { brands: BRANDS.filter((b) => b !== "Apple"), family: "Linux", requires_tpm: false }, sort_order: 40 },
+  { category: "operating_system", label: "macOS", attributes: { brands: ["Apple"], family: "macOS" }, sort_order: 10 },
+  { category: "operating_system", label: "Windows 11 Home", attributes: { brands: BRANDS.filter((b) => b !== "Apple"), family: "Windows", edition: "Home", requires_tpm: true }, sort_order: 20 },
+  { category: "operating_system", label: "Windows 11 Pro", attributes: { brands: BRANDS.filter((b) => b !== "Apple"), family: "Windows", edition: "Pro", requires_tpm: true }, sort_order: 30 },
+  { category: "operating_system", label: "Ubuntu 24.04 LTS", attributes: { brands: BRANDS.filter((b) => b !== "Apple"), family: "Linux", requires_tpm: false }, sort_order: 40 },
 
   // Optional desktop internals, kept from the existing catalogue.
-  { category: "motherboard", label: "ASUS PRIME B650M-A", indicative_price: 18000000, attributes: { socket: "AM5", form_factor: "mATX", memory_slots: 4, max_memory_gb: 128, supported_memory_types: ["DDR5"], supported_storage_interfaces: ["NVMe", "SATA"], has_tpm: true, m2_slots: 2 }, sort_order: 10 },
-  { category: "motherboard", label: "MSI PRO B760M", indicative_price: 16000000, attributes: { socket: "LGA1700", form_factor: "mATX", memory_slots: 4, max_memory_gb: 128, supported_memory_types: ["DDR5"], supported_storage_interfaces: ["NVMe", "SATA"], has_tpm: true, m2_slots: 2 }, sort_order: 20 },
-  { category: "psu", label: "Corsair RM650e", indicative_price: 8000000, attributes: { wattage: 650, efficiency: "Gold", modular: "Full" }, sort_order: 10 },
-  { category: "psu", label: "Corsair RM850e", indicative_price: 11500000, attributes: { wattage: 850, efficiency: "Gold", modular: "Full" }, sort_order: 20 },
-  { category: "case", label: "NZXT H5 Flow", indicative_price: 12000000, attributes: { supported_form_factors: ["ATX", "mATX", "Mini-ITX"], max_gpu_length_mm: 365, max_cooler_height_mm: 165, included_fans: 2 }, sort_order: 10 },
-  { category: "case", label: "Cooler Master NR200", indicative_price: 14000000, attributes: { supported_form_factors: ["Mini-ITX"], max_gpu_length_mm: 330, max_cooler_height_mm: 155, included_fans: 1 }, sort_order: 20 },
-  { category: "cpu_cooler", label: "DeepCool AK400", indicative_price: 3500000, attributes: { type: "Air", sockets: ["AM5", "LGA1700"], height_mm: 155, tdp_rating: 220 }, sort_order: 10 },
-  { category: "cpu_cooler", label: "Noctua NH-D15", indicative_price: 8500000, attributes: { type: "Air", sockets: ["AM5", "LGA1700"], height_mm: 165, tdp_rating: 250 }, sort_order: 20 },
-  { category: "case_cooling", label: "Arctic P12 120mm (3-pack)", indicative_price: 2400000, attributes: { size_mm: 120, airflow_cfm: 56, noise_dba: 22 }, sort_order: 10 },
+  { category: "motherboard", label: "ASUS PRIME B650M-A", attributes: { socket: "AM5", form_factor: "mATX", memory_slots: 4, max_memory_gb: 128, supported_memory_types: ["DDR5"], supported_storage_interfaces: ["NVMe", "SATA"], has_tpm: true, m2_slots: 2 }, sort_order: 10 },
+  { category: "motherboard", label: "MSI PRO B760M", attributes: { socket: "LGA1700", form_factor: "mATX", memory_slots: 4, max_memory_gb: 128, supported_memory_types: ["DDR5"], supported_storage_interfaces: ["NVMe", "SATA"], has_tpm: true, m2_slots: 2 }, sort_order: 20 },
+  { category: "psu", label: "Corsair RM650e", attributes: { wattage: 650, efficiency: "Gold", modular: "Full" }, sort_order: 10 },
+  { category: "psu", label: "Corsair RM850e", attributes: { wattage: 850, efficiency: "Gold", modular: "Full" }, sort_order: 20 },
+  { category: "case", label: "NZXT H5 Flow", attributes: { supported_form_factors: ["ATX", "mATX", "Mini-ITX"], max_gpu_length_mm: 365, max_cooler_height_mm: 165, included_fans: 2 }, sort_order: 10 },
+  { category: "case", label: "Cooler Master NR200", attributes: { supported_form_factors: ["Mini-ITX"], max_gpu_length_mm: 330, max_cooler_height_mm: 155, included_fans: 1 }, sort_order: 20 },
+  { category: "cpu_cooler", label: "DeepCool AK400", attributes: { type: "Air", sockets: ["AM5", "LGA1700"], height_mm: 155, tdp_rating: 220 }, sort_order: 10 },
+  { category: "cpu_cooler", label: "Noctua NH-D15", attributes: { type: "Air", sockets: ["AM5", "LGA1700"], height_mm: 165, tdp_rating: 250 }, sort_order: 20 },
+  { category: "case_cooling", label: "Arctic P12 120mm (3-pack)", attributes: { size_mm: 120, airflow_cfm: 56, noise_dba: 22 }, sort_order: 10 },
 
   // Optional extras
-  { category: "monitor", label: 'Dell 27" 1440p 165Hz', indicative_price: 26000000, attributes: { size_in: 27, resolution: "2560x1440", refresh_hz: 165, panel: "IPS" }, sort_order: 10 },
-  { category: "peripherals", label: "Logitech MK270 keyboard & mouse", indicative_price: 3200000, attributes: { kind: "Combo", connection: "Wireless" }, sort_order: 10 },
-  { category: "services", label: "Assembly & testing", indicative_price: 2500000, attributes: { kind: "Assembly" }, sort_order: 10 },
-  { category: "services", label: "Data transfer from your old machine", indicative_price: 1500000, attributes: { kind: "Data transfer" }, sort_order: 20 },
+  { category: "monitor", label: 'Dell 27" 1440p 165Hz', attributes: { size_in: 27, resolution: "2560x1440", refresh_hz: 165, panel: "IPS" }, sort_order: 10 },
+  { category: "peripherals", label: "Logitech MK270 keyboard & mouse", attributes: { kind: "Combo", connection: "Wireless" }, sort_order: 10 },
+  { category: "services", label: "Assembly & testing", attributes: { kind: "Assembly" }, sort_order: 10 },
+  { category: "services", label: "Data transfer from your old machine", attributes: { kind: "Data transfer" }, sort_order: 20 },
 ]

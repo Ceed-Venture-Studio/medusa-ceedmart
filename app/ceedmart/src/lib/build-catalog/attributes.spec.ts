@@ -132,8 +132,8 @@ describe("CSV headers", () => {
   })
 
   it("always leads with the identity columns", () => {
-    expect(csvHeader(schemaFor("cpu")).slice(0, 4)).toEqual([
-      "label", "brand", "variant_id", "indicative_price_naira",
+    expect(csvHeader(schemaFor("cpu")).slice(0, 3)).toEqual([
+      "label", "brand", "variant_id",
     ])
   })
 })
