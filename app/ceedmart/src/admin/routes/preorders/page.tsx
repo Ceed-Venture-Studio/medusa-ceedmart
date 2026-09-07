@@ -1,7 +1,8 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { ArrowPath } from "@medusajs/icons"
+import { ArrowPath, PencilSquare, Trash } from "@medusajs/icons"
 import {
   Badge,
+  IconButton,
   Button,
   Container,
   Drawer,
@@ -839,35 +840,6 @@ const PreordersPage = () => {
   const reconfirm = (offer: Offer) =>
     patchOffer(offer, { availability_verified: true }, "Availability re-confirmed")
 
-  const setExpiry = async (offer: Offer) => {
-    const current = offer.offer_expires_at
-      ? new Date(offer.offer_expires_at).toISOString().slice(0, 10)
-      : ""
-    const answer = window.prompt(
-      "Offer expires on (YYYY-MM-DD). Leave blank to remove the expiry.",
-      current
-    )
-    if (answer === null) return
-
-    const trimmed = answer.trim()
-    if (!trimmed) {
-      await patchOffer(offer, { offer_expires_at: null }, "Expiry removed")
-      return
-    }
-    const parsed = new Date(trimmed)
-    if (Number.isNaN(parsed.getTime())) {
-      toast.error("Use YYYY-MM-DD")
-      return
-    }
-    // End of the chosen day, so an offer expiring "on the 14th" is buyable
-    // throughout the 14th rather than dying at midnight as it begins.
-    parsed.setHours(23, 59, 59, 999)
-    await patchOffer(
-      offer,
-      { offer_expires_at: parsed.toISOString() },
-      `Expires ${parsed.toLocaleDateString()}`
-    )
-  }
 
   const publish = async (offer: Offer) => {
     try {
@@ -1094,7 +1066,7 @@ const PreordersPage = () => {
                           )}
                         </Table.Cell>
                         <Table.Cell>
-                          <div className="flex items-center gap-x-2">
+                          <div className="flex items-center gap-x-1">
                             <Button
                               size="small"
                               variant={o.is_active ? "secondary" : "primary"}
@@ -1102,38 +1074,45 @@ const PreordersPage = () => {
                             >
                               {o.is_active ? "Unpublish" : "Verify & publish"}
                             </Button>
-                            {o.is_active && (
-                              <Button
-                                size="small"
-                                variant="transparent"
-                                onClick={() => reconfirm(o)}
-                              >
-                                Re-confirm
-                              </Button>
-                            )}
-                            <Button
+
+                            {/* Icons for the three that repeat on every row.
+                                Publish stays worded because it is the
+                                consequential one and its label changes with
+                                state — an icon that means two opposite things
+                                is a guess the operator has to make. */}
+                            <IconButton
                               size="small"
                               variant="transparent"
                               onClick={() => editOffer(o)}
+                              title="Edit offer"
+                              aria-label="Edit offer"
                             >
-                              Edit
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="transparent"
-                              onClick={() => setExpiry(o)}
-                            >
-                              {o.offer_expires_at ? "Expiry" : "Set expiry"}
-                            </Button>
-                            {!o.is_active && (
-                              <Button
+                              <PencilSquare />
+                            </IconButton>
+
+                            {o.is_active && (
+                              <IconButton
                                 size="small"
                                 variant="transparent"
-                                className="text-ui-fg-error"
-                                onClick={() => removeOffer(o)}
+                                onClick={() => reconfirm(o)}
+                                title="Re-confirm availability"
+                                aria-label="Re-confirm availability"
                               >
-                                Delete
-                              </Button>
+                                <ArrowPath />
+                              </IconButton>
+                            )}
+
+                            {!o.is_active && (
+                              <IconButton
+                                size="small"
+                                variant="transparent"
+                                onClick={() => removeOffer(o)}
+                                title="Delete offer"
+                                aria-label="Delete offer"
+                                className="text-ui-fg-error"
+                              >
+                                <Trash />
+                              </IconButton>
                             )}
                           </div>
                         </Table.Cell>
