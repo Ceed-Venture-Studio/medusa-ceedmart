@@ -35,6 +35,23 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const state =
     typeof req.query.state === "string" ? req.query.state.trim() : null
 
+  const str = (key: string): string | null => {
+    const v = req.query[key]
+    return typeof v === "string" && v.trim() ? v.trim() : null
+  }
+  const num = (key: string): number | null => {
+    const v = Number(req.query[key])
+    return Number.isFinite(v) ? v : null
+  }
+
+  const search = str("q")?.toLowerCase() ?? null
+  const condition = str("condition")?.toLowerCase() ?? null
+  const source = str("source")?.toLowerCase() ?? null
+  const maxDays = num("max_days")
+  const minPrice = num("min_price")
+  const maxPrice = num("max_price")
+  const sort = str("sort")
+
   const offers = await svc.listPreorderOffers(
     { is_active: true },
     { order: { created_at: "DESC" }, take: Number(req.query.limit) || 50 }
@@ -122,6 +139,97 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     })
     .filter((row) => row.title)
 
+  // ── Search and filter ──────────────────────────────────────────────────
+  // Done here rather than in the offer query because most of what a shopper
+  // searches by does not live on the offer: the product title and variant
+  // come from the catalogue and are only known once the two reads above have
+  // resolved. Filtering in SQL would mean matching on ids we do not have yet.
+  //
+  // Safe at this size — the endpoint takes at most `limit` offers (50 by
+  // default) — but it is the reason this is a filter over a page rather than
+  // a search over everything. If the catalogue of offers grows past a few
+  // hundred this needs to become a real index.
+  const matches = (row: (typeof rows)[number]): boolean => {
+    if (search) {
+      // Everything a customer might reasonably type: what it is, which
+      // variant, its condition, who covers the warranty, where it comes
+      // from, and what the price includes.
+      const haystack = [
+        row.title,
+        row.variant_title,
+        row.condition,
+        row.warranty_text,
+        row.source_country_code,
+        ...row.includes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+
+      // Every word must appear somewhere, so "used inverter" narrows rather
+      // than widening to everything used OR every inverter.
+      const words = search.split(/\s+/).filter(Boolean)
+      if (!words.every((w) => haystack.includes(w))) {
+        return false
+      }
+    }
+
+    if (condition && String(row.condition).toLowerCase() !== condition) {
+      return false
+    }
+    if (source && String(row.source_country_code).toLowerCase() !== source) {
+      return false
+    }
+    if (maxDays !== null && row.estimate_days > maxDays) {
+      return false
+    }
+    // Prices arrive in naira from the query string and are stored in kobo.
+    if (minPrice !== null && row.price < minPrice * 100) {
+      return false
+    }
+    if (maxPrice !== null && row.price > maxPrice * 100) {
+      return false
+    }
+    return true
+  }
+
+  const filtered = rows.filter(matches)
+
+  // Unavailable offers sink regardless of sort — an item that cannot be
+  // bought should not head a list someone is shopping.
+  const bySort: Record<string, (a: any, b: any) => number> = {
+    price_asc: (a, b) => a.price - b.price,
+    price_desc: (a, b) => b.price - a.price,
+    fastest: (a, b) => a.estimate_days - b.estimate_days,
+  }
+  const compare = sort ? bySort[sort] : undefined
+  if (compare) {
+    filtered.sort(
+      (a, b) => Number(b.available) - Number(a.available) || compare(a, b)
+    )
+  }
+
+  // The facet values come from the unfiltered page, so choosing "Used" does
+  // not make every other condition vanish from the picker.
+  const facets = {
+    conditions: [...new Set(rows.map((r) => r.condition).filter(Boolean))].sort(),
+    sources: [
+      ...new Set(rows.map((r) => r.source_country_code).filter(Boolean)),
+    ].sort(),
+    max_days: rows.reduce((m, r) => Math.max(m, r.estimate_days), 0),
+    price_range: rows.length
+      ? {
+          min: Math.min(...rows.map((r) => r.price)),
+          max: Math.max(...rows.map((r) => r.price)),
+        }
+      : null,
+  }
+
   res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60")
-  res.json({ preorders: rows, count: rows.length })
+  res.json({
+    preorders: filtered,
+    count: filtered.length,
+    total: rows.length,
+    facets,
+  })
 }
