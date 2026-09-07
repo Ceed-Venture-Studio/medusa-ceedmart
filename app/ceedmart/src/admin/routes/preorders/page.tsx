@@ -52,6 +52,10 @@ type Offer = {
   thumbnail: string | null
   supplier_id: string | null
   locked_price: number
+  // Returned by the list route (it spreads the whole offer) but previously
+  // undeclared, so nothing could read them. The edit form needs both.
+  cost_components: Record<string, number | null> | null
+  fx_rate: number | null
   currency_code: string
   condition: string
   is_active: boolean
@@ -140,14 +144,35 @@ const label = (value: string) =>
 
 // ─── Offer drawer ─────────────────────────────────────────────────────────
 
+const BLANK_FORM: Record<string, string> = {
+    supplier_id: "",
+    price_naira: "",
+    procurement_days: "3",
+    transit_days: "7",
+    customs_days: "4",
+    condition: "new",
+    warranty_text: "",
+    return_policy_text: "",
+    offer_expires_on: "",
+    source_price_cents: "",
+    fx_rate: "",
+    freight_naira: "",
+    duty_naira: "",
+    margin_naira: "",
+}
+
 const OfferDrawer = ({
   open,
+  offer,
   suppliers,
   onClose,
   onSaved,
   onSuppliersChanged,
 }: {
   open: boolean
+  /** Editing when present, creating when null. One drawer for both: the
+   *  fields are identical, and a second copy would drift from this one. */
+  offer: Offer | null
   suppliers: Supplier[]
   onClose: () => void
   onSaved: () => void
@@ -166,22 +191,7 @@ const OfferDrawer = ({
     variantId: null,
     label: "",
   })
-  const [form, setForm] = useState<Record<string, string>>({
-    supplier_id: "",
-    price_naira: "",
-    procurement_days: "3",
-    transit_days: "7",
-    customs_days: "4",
-    condition: "new",
-    warranty_text: "",
-    return_policy_text: "",
-    offer_expires_on: "",
-    source_price_cents: "",
-    fx_rate: "",
-    freight_naira: "",
-    duty_naira: "",
-    margin_naira: "",
-  })
+  const [form, setForm] = useState<Record<string, string>>(BLANK_FORM)
 
   const set = (key: string, value: string) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -245,12 +255,23 @@ const OfferDrawer = ({
 
     setSaving(true)
     try {
-      await fetchAdmin("/admin/preorders/offers", {
-        method: "POST",
+      // PATCH when editing. The listing itself is not editable — an offer is
+      // a commercial wrapper around one variant, and repointing it at another
+      // would silently change what a customer was quoted on.
+      await fetchAdmin(
+        offer ? `/admin/preorders/offers/${offer.id}` : "/admin/preorders/offers",
+        {
+        method: offer ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          variant_id: listing.variantId ?? undefined,
-          product_id: listing.variantId ? undefined : listing.productId ?? undefined,
+          ...(offer
+            ? {}
+            : {
+                variant_id: listing.variantId ?? undefined,
+                product_id: listing.variantId
+                  ? undefined
+                  : listing.productId ?? undefined,
+              }),
           supplier_id: form.supplier_id || undefined,
           locked_price: kobo("price_naira"),
           procurement_days: Number(form.procurement_days) || 0,
@@ -259,9 +280,14 @@ const OfferDrawer = ({
           condition: form.condition,
           // End of the chosen day: an offer expiring "on the 14th" should be
           // buyable throughout the 14th, not dead as it begins.
+          // Blank means "no expiry" when editing, so send null to clear it.
+          // undefined would be dropped by JSON.stringify and the old date
+          // would survive a deliberate clearing.
           offer_expires_at: form.offer_expires_on
             ? new Date(`${form.offer_expires_on}T23:59:59`).toISOString()
-            : undefined,
+            : offer
+              ? null
+              : undefined,
           warranty_text: form.warranty_text.trim() || undefined,
           return_policy_text: form.return_policy_text.trim() || undefined,
           fx_rate: num("fx_rate"),
@@ -274,7 +300,11 @@ const OfferDrawer = ({
           },
         }),
       })
-      toast.success("Offer created as a draft — confirm availability to publish it")
+      toast.success(
+        offer
+          ? "Offer updated"
+          : "Offer created as a draft — confirm availability to publish it"
+      )
       setListing({ productId: null, variantId: null, label: "" })
       onSaved()
       onClose()
@@ -718,6 +748,8 @@ const PreordersPage = () => {
   const [queue, setQueue] = useState<Preorder[] | null>(null)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Which offer the drawer is editing. null means it is creating one.
+  const [editingOffer, setEditingOffer] = useState<Offer | null>(null)
   const [openPreorder, setOpenPreorder] = useState<Preorder | null>(null)
   const [tick, setTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -778,6 +810,32 @@ const PreordersPage = () => {
   // unpublishing and republishing: an action that reads like taking the
   // product down, to do something that is really "yes, the supplier still
   // has it".
+  const removeOffer = async (offer: Offer) => {
+    // The API refuses to delete an offer with pre-orders against it, and says
+    // so. Asking here too means the common case — a draft typed in wrong —
+    // does not need a round trip to find out it is fine.
+    if (
+      !window.confirm(
+        `Delete this offer permanently?\n\n${offer.product_title ?? offer.id}\n\n` +
+          `Offers with pre-orders against them cannot be deleted — unpublish those instead.`
+      )
+    ) {
+      return
+    }
+    try {
+      await fetchAdmin(`/admin/preorders/offers/${offer.id}`, { method: "DELETE" })
+      toast.success("Offer deleted")
+      reload()
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not delete the offer")
+    }
+  }
+
+  const editOffer = (offer: Offer) => {
+    setEditingOffer(offer)
+    setDrawerOpen(true)
+  }
+
   const reconfirm = (offer: Offer) =>
     patchOffer(offer, { availability_verified: true }, "Availability re-confirmed")
 
@@ -851,7 +909,10 @@ const PreordersPage = () => {
           <Button variant="secondary" size="small" onClick={reload}>
             <ArrowPath /> Refresh
           </Button>
-          <Button size="small" onClick={() => setDrawerOpen(true)}>
+          <Button size="small" onClick={() => {
+                  setEditingOffer(null)
+                  setDrawerOpen(true)
+                }}>
             New offer
           </Button>
         </div>
@@ -1053,10 +1114,27 @@ const PreordersPage = () => {
                             <Button
                               size="small"
                               variant="transparent"
+                              onClick={() => editOffer(o)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="transparent"
                               onClick={() => setExpiry(o)}
                             >
                               {o.offer_expires_at ? "Expiry" : "Set expiry"}
                             </Button>
+                            {!o.is_active && (
+                              <Button
+                                size="small"
+                                variant="transparent"
+                                className="text-ui-fg-error"
+                                onClick={() => removeOffer(o)}
+                              >
+                                Delete
+                              </Button>
+                            )}
                           </div>
                         </Table.Cell>
                       </Table.Row>
@@ -1072,7 +1150,10 @@ const PreordersPage = () => {
                 Who you buy from. Recorded per offer so you can see whose
                 items actually arrive inside the promised window.
               </Text>
-              <Button size="small" variant="secondary" onClick={() => setDrawerOpen(true)}>
+              <Button size="small" variant="secondary" onClick={() => {
+                  setEditingOffer(null)
+                  setDrawerOpen(true)
+                }}>
                 Add via new offer
               </Button>
             </div>
@@ -1127,8 +1208,12 @@ const PreordersPage = () => {
 
       <OfferDrawer
         open={drawerOpen}
+        offer={editingOffer}
         suppliers={suppliers}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => {
+          setDrawerOpen(false)
+          setEditingOffer(null)
+        }}
         onSaved={reload}
         onSuppliersChanged={reload}
       />
