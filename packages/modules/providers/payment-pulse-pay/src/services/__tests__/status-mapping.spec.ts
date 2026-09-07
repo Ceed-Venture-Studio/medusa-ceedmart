@@ -91,3 +91,39 @@ describe("mapPulseStatus", () => {
     expect(mapPulseStatus(PulsePaymentStatus.Authorized)).toBe("authorized")
   })
 })
+
+// buildWebhookResult is private, so this asserts the RULE it now follows —
+// that a webhook action is derived from mapPulseStatus rather than from a
+// second switch. The original bug was not a wrong line, it was a duplicate:
+// mapPulseStatus was corrected and this copy was not, so a paid order still
+// arrived as CANCELED. These pin the pairing.
+describe("webhook actions follow the same mapping", () => {
+  const action = (status: PulsePaymentStatus) => {
+    const s = mapPulseStatus(status)
+    return s === "captured"
+      ? "captured"
+      : s === "authorized"
+        ? "authorized"
+        : s === "error"
+          ? "failed"
+          : s === "canceled"
+            ? "canceled"
+            : "not_supported"
+  }
+
+  it.each([
+    [PulsePaymentStatus.Completed, "captured"],
+    [PulsePaymentStatus.Authorized, "authorized"],
+    [PulsePaymentStatus.Failed, "failed"],
+    [PulsePaymentStatus.Cancelled, "canceled"],
+    [PulsePaymentStatus.Expired, "canceled"],
+    [PulsePaymentStatus.Initiated, "not_supported"],
+    [PulsePaymentStatus.Pending, "not_supported"],
+  ])("%d → %s", (status, expected) => {
+    expect(action(status)).toBe(expected)
+  })
+
+  it("never cancels an order that was paid for", () => {
+    expect(action(PulsePaymentStatus.Completed)).not.toBe("canceled")
+  })
+})

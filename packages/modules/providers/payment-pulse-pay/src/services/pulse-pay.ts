@@ -664,39 +664,44 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     }
   }
 
+  /**
+   * Turn a Pulse status into a webhook action.
+   *
+   * Derived from mapPulseStatus rather than switching on the raw status a
+   * second time. This method USED to carry its own copy — 1 SUCCESSFUL,
+   * 2 FAILED, 3 CANCELED — which was the same misreading of the enum that
+   * was fixed in mapPulseStatus, and it survived that fix by being a
+   * separate switch. Under the real enum it reported a COMPLETED payment
+   * (3) as CANCELED: the customer pays, the webhook arrives, and the order
+   * is cancelled.
+   *
+   * One mapping, one place. The two cannot drift apart again.
+   */
   private buildWebhookResult(
     status: any,
     sessionId: string,
     amount: number
   ): WebhookActionResult {
-    // Pulse sends status as string ("success", "failed") or number (0, 1, 2, 3)
-    const normalized = typeof status === "string" ? status.toLowerCase() : status
+    const sessionStatus = mapPulseStatus(status)
 
-    switch (normalized) {
-      case "success":
-      case 1:
-        return {
-          action: PaymentActions.SUCCESSFUL,
-          data: { session_id: sessionId, amount: new BigNumber(amount) },
-        }
-      case "failed":
-      case 2:
-        return {
-          action: PaymentActions.FAILED,
-          data: { session_id: sessionId, amount: new BigNumber(amount) },
-        }
-      case "cancelled":
-      case "canceled":
-      case 3:
-        return {
-          action: PaymentActions.CANCELED,
-          data: { session_id: sessionId, amount: new BigNumber(amount) },
-        }
-      default:
-        return {
-          action: PaymentActions.NOT_SUPPORTED,
-          data: { session_id: sessionId, amount: new BigNumber(amount) },
-        }
+    const action =
+      sessionStatus === "captured"
+        ? PaymentActions.SUCCESSFUL
+        : sessionStatus === "authorized"
+          ? PaymentActions.AUTHORIZED
+          : sessionStatus === "error"
+            ? PaymentActions.FAILED
+            : sessionStatus === "canceled"
+              ? PaymentActions.CANCELED
+              : // "pending" covers Initiated and Pending, and is also what an
+                // unrecognised status maps to. Neither is an event worth
+                // acting on: NOT_SUPPORTED tells Medusa to leave the session
+                // alone rather than move it somewhere on a guess.
+                PaymentActions.NOT_SUPPORTED
+
+    return {
+      action,
+      data: { session_id: sessionId, amount: new BigNumber(amount) },
     }
   }
 
