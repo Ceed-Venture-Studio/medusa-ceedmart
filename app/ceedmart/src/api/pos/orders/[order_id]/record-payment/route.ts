@@ -14,8 +14,10 @@ import {
 } from "@medusajs/core-flows"
 import type {
   IPaymentModuleService,
+  Logger,
   PaymentCollectionDTO,
 } from "@medusajs/framework/types"
+import { fulfillOrderNow } from "../../../../../lib/pos/fulfill"
 
 // POS payment recording with explicit provider id.
 //
@@ -32,8 +34,59 @@ import type {
 //   2. Create payment session with the requested provider_id.
 //   3. Authorize the session (manual providers return AUTHORIZED immediately).
 //   4. Capture the payment for the full collection amount.
+//   5. Fulfil the order, because at a till the goods have already gone.
+//
+// Step 5 is what keeps stock honest. Placing an order only RESERVES stock;
+// the physical count (stocked_quantity) does not move until a fulfillment
+// exists. Online that gap is the days before dispatch. At a till there is
+// no gap, so without this the reservation never closes and
+// stocked_quantity keeps counting items the customer has already carried
+// out of the shop. See src/lib/pos/fulfill.ts for the full reasoning.
 
 type Body = { provider_id: string }
+
+type FulfillOutcome = {
+  fulfilled: boolean
+  fulfillment_ids: string[]
+  fulfillment_error: string | null
+}
+
+// Fulfil, but never at the cost of the sale.
+//
+// The money is captured by the time this runs. If fulfilling throws — a
+// missing stock location, a shipping profile mismatch — the cashier must
+// NOT see a failed request: they would retry and try to charge the customer
+// a second time for goods already handed over. So this is best-effort, and
+// the outcome is reported in the response body rather than as a status
+// code. An unfulfilled order is a stock discrepancy someone can fix later;
+// a double charge is a refund and an apology.
+const fulfilBestEffort = async (
+  req: AuthenticatedMedusaRequest<Body>,
+  orderId: string
+): Promise<FulfillOutcome> => {
+  const logger = req.scope.resolve<Logger>(ContainerRegistrationKeys.LOGGER)
+  try {
+    const result = await fulfillOrderNow(req.scope, orderId, {
+      createdBy: req.auth_context.actor_id,
+    })
+    if (!result.fulfilled) {
+      logger.warn(
+        `[pos] order ${orderId} paid but not fulfilled: ${result.reason}`
+      )
+    }
+    return {
+      fulfilled: result.fulfilled,
+      fulfillment_ids: result.fulfillment_ids,
+      fulfillment_error: result.fulfilled ? null : result.reason ?? null,
+    }
+  } catch (err: any) {
+    const message = err?.message ?? String(err)
+    logger.error(
+      `[pos] order ${orderId} was paid but could not be fulfilled: ${message}`
+    )
+    return { fulfilled: false, fulfillment_ids: [], fulfillment_error: message }
+  }
+}
 
 export const POST = async (
   req: AuthenticatedMedusaRequest<Body>,
@@ -78,10 +131,15 @@ export const POST = async (
     )
   }
   if (order.payment_status === "captured") {
+    // Still try to fulfil. This is the path a retrying till takes, and
+    // fulfillOrderNow subtracts what is already fulfilled, so a sale that
+    // was paid but left unfulfilled gets repaired here instead of being
+    // stuck forever behind an early return.
     return res.json({
       ok: true,
       already_captured: true,
       order_id,
+      ...(await fulfilBestEffort(req, order_id)),
     })
   }
 
@@ -156,5 +214,7 @@ export const POST = async (
     order_id,
     payment_id: payment.id,
     provider_id,
+    // The till can surface this; stock is wrong until someone acts on it.
+    ...(await fulfilBestEffort(req, order_id)),
   })
 }
