@@ -36,7 +36,6 @@ type PulsePayOptions = {
    * the tenant's stored key server-side, so BYOK tenants never send one.
    * Retained for tenants still passing their own.
    */
-  serviceKey?: string
   tenantId: string
   /**
    * Static service token. Legacy: kept only as a fallback for calls made
@@ -158,7 +157,6 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   static identifier = "pulse-pay"
 
   private apiKey: string
-  private serviceKey?: string
   private tenantId: string
   private bearerToken: string
   private identityBaseUrl: string
@@ -192,7 +190,6 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   constructor(container: Record<string, unknown>, options: PulsePayOptions) {
     super(container, options)
     this.apiKey = options.apiKey
-    this.serviceKey = options.serviceKey
     this.tenantId = options.tenantId
     this.bearerToken = options.bearerToken
     this.identityBaseUrl =
@@ -232,6 +229,9 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
 
   /**
    * Which gateway to charge through.
+   *
+   * Only consulted when the customer did not choose — a cart resumed from
+   * an older session, or a caller that does not offer a choice.
    *
    * Configured value wins. Otherwise we ASK Pulse rather than omitting the
    * field: Pulse is documented to resolve a single configured provider on
@@ -331,12 +331,14 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       "X-API-Key": this.apiKey,
     }
 
-    // Only when the tenant still supplies its own key. Pulse holds the
-    // credential now, so sending one is both unnecessary and a way to charge
-    // through a key the dashboard no longer reflects.
-    if (this.serviceKey) {
-      headers["Service-Key"] = this.serviceKey
-    }
+    // No Service-Key, ever. Gateway credentials are encrypted and persisted
+    // on the Pulse dashboard; the tenant API key identifies us and `channel`
+    // says which of their stored gateways to charge. Sending a key of our
+    // own would put a second, unversioned copy of a secret in every request
+    // — and, since a Service-Key belongs to ONE gateway while a tenant may
+    // have several, it silently contradicts the channel: our Paystack key
+    // checked against their Monnify setup is what produced "Monnify
+    // Service-Key must be a JSON bundle".
 
     const response = await fetch(url, {
       method,
@@ -391,7 +393,16 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       )
     }
 
-    const channel = await this.resolveChannel(pimId)
+    // The channel the CUSTOMER chose, sent by checkout in the session data,
+    // wins over anything we would work out ourselves. Without this their
+    // choice never left the storefront: resolveChannel only answers when
+    // exactly one gateway is configured, so with two it returned "" and
+    // Pulse refused the request — "This tenant has more than one payment
+    // provider configured (monnify, paystack). Specify 'channel'." The
+    // customer picked one; we simply were not passing it on.
+    const chosenChannel =
+      typeof sessionData?.channel === "string" ? sessionData.channel.trim() : ""
+    const channel = chosenChannel || (await this.resolveChannel(pimId))
 
     const successUrl = new URL(this.successRedirectUrl)
     successUrl.searchParams.set("session_id", sessionId || "")

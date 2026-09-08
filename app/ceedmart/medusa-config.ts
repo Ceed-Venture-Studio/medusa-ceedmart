@@ -252,9 +252,6 @@ export default defineConfig({
             id: "pulse-pay",
             options: {
               apiKey: process.env.PULSE_PAYMENT_API_KEY || process.env.PULSE_IDENTITY_API_KEY,
-              // Optional. Pulse holds the gateway credential now; this is
-              // only for tenants still bringing their own.
-              serviceKey: process.env.PULSE_PAYMENT_SERVICE_KEY,
               tenantId: process.env.PULSE_IDENTITY_TENANT_ID,
               bearerToken: process.env.PULSE_PAYMENT_BEARER_TOKEN,
               // Points at a local Pulse Pay instance for validation. The
