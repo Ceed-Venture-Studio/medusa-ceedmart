@@ -1,3 +1,4 @@
+import crypto from "crypto"
 import {
   AbstractPaymentProvider,
   BigNumber,
@@ -54,6 +55,7 @@ type PulsePayOptions = {
    * it will not decide on its own which provider takes a customer's money.
    */
   channel?: string
+  webhookSecret?: string
   baseUrl?: string
   successRedirectUrl?: string
   failureRedirectUrl?: string
@@ -162,6 +164,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   private identityBaseUrl: string
   private applicationId: string
   private channel: string
+  private webhookSecret?: string
   private baseUrl: string
   private successRedirectUrl: string
   private failureRedirectUrl: string
@@ -197,6 +200,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       "https://pulse-identity-manager-218803590341.europe-west1.run.app/api/v1"
     this.applicationId = options.applicationId || ""
     this.channel = options.channel || ""
+    this.webhookSecret = options.webhookSecret
     this.baseUrl = options.baseUrl || PULSE_PAY_BASE_URL
     this.successRedirectUrl =
       options.successRedirectUrl || "http://localhost:8000/ng/checkout?step=review"
@@ -416,8 +420,16 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       currency: (currency_code || "NGN").toUpperCase(),
       action: "initiate_charge",
       ...(channel ? { channel } : {}),
+      // pim_id travels with the payment because the WEBHOOK needs it.
+      // A webhook has no customer in scope, and confirming it means minting
+      // a customer token — so the id has to come back to us somehow.
+      // Pulse's own CustomerId field cannot be relied on: on a Monnify event
+      // it carries the customer's EMAIL, which Identity rejects with
+      // "Invalid tenant customer ID". Metadata is ours and round-trips
+      // unchanged.
       metadata: JSON.stringify({
         session_id: sessionId,
+        pim_id: pimId,
       }),
       successlRedirectUrl: successUrl.toString(),
       failureRedirectUrl: failureUrl.toString(),
@@ -682,6 +694,55 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   }
 
   /**
+   * Is this webhook really from Pulse?
+   *
+   * Pulse sends the shared secret in `pulse-webhook-hash`, base64-encoded —
+   * observed on a live delivery, where the value decoded to the literal
+   * placeholder this instance is configured with. It is a bearer token, NOT
+   * a signature: it is the same on every request and covers none of the
+   * body, so it proves the sender knows a secret and nothing about what they
+   * sent. Replayable, and useless if the secret leaks.
+   *
+   * That is why it does not replace confirm-by-reading below. It is a cheap
+   * first gate that rejects internet noise before we spend a Pulse round
+   * trip on it; the authenticated re-read remains what decides whether a
+   * payment happened.
+   *
+   * Unset secret means no gate, which is how it behaved before and keeps a
+   * misconfigured environment working rather than silently dropping real
+   * payments.
+   */
+  private webhookSenderIsTrusted(
+    headers: Record<string, any> | undefined
+  ): boolean {
+    if (!this.webhookSecret) {
+      return true
+    }
+
+    const supplied = String(
+      headers?.["pulse-webhook-hash"] ?? headers?.["Pulse-Webhook-Hash"] ?? ""
+    ).trim()
+    if (!supplied) {
+      return false
+    }
+
+    // Accept the base64 form Pulse sends and the bare secret, so a change of
+    // encoding on their side is not an outage on ours.
+    const expected = [
+      Buffer.from(this.webhookSecret, "utf8").toString("base64"),
+      this.webhookSecret,
+    ]
+
+    return expected.some((candidate) => {
+      const a = Buffer.from(candidate, "utf8")
+      const b = Buffer.from(supplied, "utf8")
+      // Length is compared first because timingSafeEqual throws on a
+      // mismatch; length is not the secret, so leaking it costs nothing.
+      return a.length === b.length && crypto.timingSafeEqual(a, b)
+    })
+  }
+
+  /**
    * Handle a webhook from Pulse.
    *
    * ── The webhook is a NUDGE, never the verdict ─────────────────────────
@@ -709,28 +770,41 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     // whether it is a plain value or an HMAC over the raw body, verification
     // can be added here and the confirm-by-reading below becomes a second
     // line of defence rather than the only one.
-    console.log(
-      "Pulse webhook headers:",
-      JSON.stringify(payload.headers ?? {}, null, 2)
-    )
+    if (!this.webhookSenderIsTrusted(payload.headers as any)) {
+      // Deliberately terse, and deliberately not an error: an unverified
+      // caller should learn nothing, and a flood of them should not fill the
+      // log with stack traces.
+      console.warn("Pulse webhook: rejected, pulse-webhook-hash did not match")
+      return {
+        action: PaymentActions.NOT_SUPPORTED,
+        data: { session_id: "", amount: new BigNumber(0) },
+      }
+    }
+
     console.log("Pulse webhook received:", JSON.stringify(event, null, 2))
 
     try {
       // Pulse sends PascalCase: Status, Amount, Metadata, Id
       const status = this.getField(event, "status", "Status")
       const amount = this.getField(event, "amount", "Amount") || 0
-      // Pulse stores the customer's pimId on the payment as customerId, and
-      // sends it back on the event. It is what lets us authenticate the
-      // confirmation call below: a webhook has no customer in scope, and the
-      // static service token is exactly the credential that does not work
-      // against a paired Identity — so without this every webhook would fail
-      // to confirm and be ignored, which fails safe but never completes an
-      // order.
-      const pimId =
-        this.getField(event, "customerId", "CustomerId") || undefined
       const rawMetadata = this.getField(event, "metadata", "Metadata")
       const metadata = this.parseMetadata(rawMetadata)
       const sessionId = metadata?.session_id || ""
+
+      // The customer id used to authenticate the confirmation call.
+      //
+      // Our own metadata first. CustomerId is a fallback and only when it
+      // LOOKS like a Pulse id: on a Monnify event that field carries the
+      // customer's email address, and handing that to Identity fails with
+      // "Invalid tenant customer ID" — which is precisely how a genuinely
+      // successful ₦426,000 payment got dropped.
+      const claimedCustomer = this.getField(event, "customerId", "CustomerId")
+      const pimId =
+        metadata?.pim_id ||
+        (typeof claimedCustomer === "string" &&
+        /^[0-9a-f]{24}$/i.test(claimedCustomer)
+          ? claimedCustomer
+          : undefined)
 
       console.log("Pulse webhook parsed:", { status, amount, sessionId })
 
@@ -799,17 +873,22 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
             )
           }
         } catch (err: any) {
-          // Could not confirm. NOT_SUPPORTED leaves the session untouched,
-          // which is the safe answer: the redirect path and any later status
-          // check still get their chance, and nothing moves on an unverified
-          // claim.
-          console.warn(
-            `Pulse webhook: could not confirm ${pulseId}, ignoring the event: ${err?.message ?? err}`
+          // Could not confirm — so THROW, and let the event bus retry.
+          //
+          // This used to return NOT_SUPPORTED, which reads as "handled" to
+          // the bus: one attempt, no retry, event gone. A momentary Identity
+          // failure therefore discarded a real payment permanently, and the
+          // webhook is precisely the backstop that is supposed to survive
+          // that. Failing loudly costs three attempts; failing quietly cost
+          // a customer their order.
+          //
+          // Still safe: nothing moves on an unverified claim either way.
+          // The only change is whether we get to try again.
+          console.error(
+            `Pulse webhook: could not confirm ${pulseId} for session ${sessionId}: ` +
+              `${err?.message ?? err} — throwing so the event is retried`
           )
-          return {
-            action: PaymentActions.NOT_SUPPORTED,
-            data: { session_id: sessionId, amount: new BigNumber(amount) },
-          }
+          throw err
         }
       }
 

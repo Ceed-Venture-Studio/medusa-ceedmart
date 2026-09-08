@@ -252,6 +252,12 @@ export default defineConfig({
             id: "pulse-pay",
             options: {
               apiKey: process.env.PULSE_PAYMENT_API_KEY || process.env.PULSE_IDENTITY_API_KEY,
+              // Shared secret Pulse sends in the `pulse-webhook-hash`
+              // header, base64-encoded. Unset means webhooks are accepted
+              // unverified — which is how this behaved before, and is
+              // preferable to silently dropping real payments in an
+              // environment nobody has configured yet.
+              webhookSecret: process.env.PULSE_WEBHOOK_SECRET,
               tenantId: process.env.PULSE_IDENTITY_TENANT_ID,
               bearerToken: process.env.PULSE_PAYMENT_BEARER_TOKEN,
               // Points at a local Pulse Pay instance for validation. The
