@@ -106,3 +106,59 @@ export const fetchPaymentOptions = async (
     return null
   }
 }
+
+/**
+ * The status Pulse holds for one payment, read WITHOUT a gateway credential.
+ *
+ * Uses /Payments/customer/{pimId} rather than /Payments/{id}: the direct
+ * read asks the gateway and answers "Service key is required" when a tenant
+ * has several providers configured, which ours does. The customer list reads
+ * Pulse's own records and carries the same status for every channel.
+ *
+ * Lives here, beside fetchPaymentOptions, so an API route can ask "did this
+ * actually get paid?" without standing up a payment provider — which is the
+ * question the checkout has to answer BEFORE it discards a session.
+ *
+ * Returns null when the answer is unknown (unreachable, no such payment).
+ * Callers must treat null as "don't know", never as "not paid": acting on
+ * the latter would throw away a payment that had in fact succeeded.
+ */
+export const fetchPaymentStatus = async (
+  paymentBaseUrl: string,
+  config: PulseTokenConfig,
+  pimId: string,
+  pulseId: string
+): Promise<number | null> => {
+  try {
+    const token = await mintCustomerToken(config, pimId)
+
+    const response = await fetch(
+      `${paymentBaseUrl}/Payments/customer/${pimId}?pageSize=100`,
+      {
+        headers: {
+          Accept: "*/*",
+          Authorization: `Bearer ${token}`,
+          "X-API-Key": config.apiKey,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      return null
+    }
+
+    const body: any = await response.json().catch(() => ({}))
+    const raw = body?.data?.value ?? body?.data ?? []
+    const payments = Array.isArray(raw) ? raw : (raw.items ?? raw.value ?? [])
+    const match = payments.find((p: any) => (p?.id ?? p?.Id) === pulseId)
+
+    if (!match) {
+      return null
+    }
+
+    const status = match.status ?? match.Status
+    return typeof status === "number" ? status : Number(status)
+  } catch {
+    return null
+  }
+}

@@ -7,6 +7,7 @@ export default ModuleProvider(Modules.PAYMENT, {
 
 export {
   fetchPaymentOptions,
+  fetchPaymentStatus,
   mintCustomerToken,
 } from "./lib/payment-options"
 export type { PulsePaymentOption, PulseTokenConfig } from "./lib/payment-options"
