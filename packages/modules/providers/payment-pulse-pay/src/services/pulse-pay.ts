@@ -324,7 +324,9 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
      * service token when absent, which covers calls with no customer in
      * scope — and is why bearerToken is still accepted.
      */
-    pimId?: string
+    pimId?: string,
+    /** Internal. Set when this call is the one retry after a 401/403. */
+    isRetry = false
   ): Promise<any> {
     const url = `${this.baseUrl}${path}`
     const token = pimId ? await this.customerToken(pimId) : this.bearerToken
@@ -351,6 +353,35 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     })
 
     const data = await response.json()
+
+    // A rejected token is worth exactly one more try with a fresh one.
+    //
+    // Customer tokens are cached until a minute before the `exp` in their
+    // claims, which covers ordinary expiry — but not a token invalidated
+    // EARLY: Identity restarting with new signing keys, a revoked session,
+    // clock skew between the two services. Pulse answers 401 INVALID_TOKEN
+    // for all of those, and the cached copy stays valid-looking, so every
+    // caller inside the cache window fails identically. The webhook's three
+    // retries happen within seconds and would all reuse the same dead token,
+    // turning a momentary key change into a permanently lost payment.
+    //
+    // So drop the cached token and mint a new one, once. If that is also
+    // refused the problem is not staleness and repeating would only add
+    // load to a service already saying no.
+    //
+    // Only for customer tokens: there is nothing to re-mint for the static
+    // bearer, and a POST is not replayed on anything but an auth failure, so
+    // this cannot double-charge.
+    const authRejected = response.status === 401 || response.status === 403
+
+    if (authRejected && pimId && !isRetry) {
+      console.warn(
+        `Pulse: ${response.status} on ${method} ${path} — discarding the cached ` +
+          `token for ${pimId} and retrying once with a fresh one`
+      )
+      this.tokenCache.delete(pimId)
+      return this.pulseRequest(method, path, body, pimId, true)
+    }
 
     if (!response.ok) {
       console.error(
