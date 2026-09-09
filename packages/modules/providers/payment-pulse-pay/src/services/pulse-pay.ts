@@ -708,7 +708,13 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
    * trip on it; the authenticated re-read remains what decides whether a
    * payment happened.
    *
-   * Unset secret means no gate, which is how it behaved before and keeps a
+   * Accepts a COMMA-SEPARATED list, because one value is not enough in
+   * practice: a local Pulse ships with a placeholder secret while the real
+   * one lives in the dashboard, and rotating a shared secret needs a window
+   * where both the old and new value are valid. A single value forces a
+   * flag day, and a flag day on a webhook means dropped payments.
+   *
+   * Unset means no gate, which is how it behaved before and keeps a
    * misconfigured environment working rather than silently dropping real
    * payments.
    */
@@ -728,10 +734,14 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
 
     // Accept the base64 form Pulse sends and the bare secret, so a change of
     // encoding on their side is not an outage on ours.
-    const expected = [
-      Buffer.from(this.webhookSecret, "utf8").toString("base64"),
-      this.webhookSecret,
-    ]
+    const expected = this.webhookSecret
+      .split(",")
+      .map((secret) => secret.trim())
+      .filter(Boolean)
+      .flatMap((secret) => [
+        Buffer.from(secret, "utf8").toString("base64"),
+        secret,
+      ])
 
     return expected.some((candidate) => {
       const a = Buffer.from(candidate, "utf8")
