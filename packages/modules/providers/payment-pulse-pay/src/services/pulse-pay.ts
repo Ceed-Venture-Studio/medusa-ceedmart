@@ -497,13 +497,10 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
 
     let pulseStatus: any = 0
     try {
-      const result = await this.pulseRequest(
-        "GET",
-        `/Payments/${pulseId}`,
-        undefined,
+      const payment = await this.readPayment(
+        pulseId,
         input.data?.pim_id as string | undefined
       )
-      const payment = result?.data?.value || result?.data || result
       pulseStatus = payment?.status ?? payment?.Status ?? 0
     } catch (err: any) {
       console.warn("Pulse authorizePayment: failed to get status:", err.message)
@@ -694,6 +691,61 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   }
 
   /**
+   * Read one payment back from Pulse.
+   *
+   * ── Why not simply GET /Payments/{id} ───────────────────────────────
+   * That endpoint asks the GATEWAY for the payment, so it needs the
+   * gateway's credentials — and answers "Service key is required" when the
+   * tenant has more than one provider and we send none. We deliberately
+   * send none: gateway credentials are encrypted and persisted on the Pulse
+   * dashboard, and a Service-Key belongs to a single gateway, so with two
+   * configured it can only ever agree with one of them.
+   *
+   * GET /Payments/customer/{pimId} reads Pulse's OWN records instead, needs
+   * no gateway credential, and carries the same status. So we look the
+   * payment up in the customer's list and fall back to the direct read only
+   * when there is no customer to look under.
+   *
+   * Verified against a live Monnify payment: the direct read returned 400
+   * "Service key is required" while the customer list reported status 3.
+   */
+  private async readPayment(
+    pulseId: string,
+    pimId?: string
+  ): Promise<any | null> {
+    if (pimId) {
+      try {
+        const list = await this.pulseRequest(
+          "GET",
+          `/Payments/customer/${pimId}?pageSize=100`,
+          undefined,
+          pimId
+        )
+        const raw = list?.data?.value ?? list?.data ?? []
+        const payments = Array.isArray(raw) ? raw : (raw.items ?? raw.value ?? [])
+        const match = payments.find(
+          (p: any) => (p?.id ?? p?.Id) === pulseId
+        )
+        if (match) {
+          return match
+        }
+      } catch (err: any) {
+        console.warn(
+          `Pulse: customer payment list failed for ${pimId}: ${err?.message ?? err}`
+        )
+      }
+    }
+
+    const result = await this.pulseRequest(
+      "GET",
+      `/Payments/${pulseId}`,
+      undefined,
+      pimId
+    )
+    return result?.data?.value || result?.data || result
+  }
+
+  /**
    * Is this webhook really from Pulse?
    *
    * Pulse sends the shared secret in `pulse-webhook-hash`, base64-encoded —
@@ -860,13 +912,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       const pulseId = this.getField(event, "id", "Id")
       if (pulseId) {
         try {
-          const result = await this.pulseRequest(
-            "GET",
-            `/Payments/${pulseId}`,
-            undefined,
-            pimId
-          )
-          const payment = result?.data?.value || result?.data || result
+          const payment = await this.readPayment(pulseId, pimId)
           const confirmed = payment?.status ?? payment?.Status
 
           if (confirmed !== undefined && confirmed !== null) {
