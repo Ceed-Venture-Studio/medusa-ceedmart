@@ -62,6 +62,14 @@ const formatMoney = (amount: unknown, currency?: string | null): string => {
   return `${n.toLocaleString()} ${cc.toUpperCase()}`
 }
 
+// The reset link. The token IS the credential, so this URL must only ever
+// go to the address that asked for it — which is why the email is sent to
+// data.entity_id and nowhere else, and why nothing logs it.
+const resetPasswordUrl = (token: string): string =>
+  `${STOREFRONT_URL}/${STOREFRONT_COUNTRY}/account/reset-password?token=${encodeURIComponent(
+    token
+  )}`
+
 const orderViewUrl = (orderId: string): string =>
   `${STOREFRONT_URL}/${STOREFRONT_COUNTRY}/order/${orderId}/confirmed`
 
@@ -401,14 +409,23 @@ const handlers: NotificationHandler[] = [
     subject: "Reset your Ceedmart password",
     template: "password-reset",
     getTo: (data) => data.entity_id,
+    // A link, not a raw token. This used to print the JWT as text and ask
+    // the customer to "use this token", with nowhere to use it — there was
+    // no reset page, and pasting a 255-character string into a form is not
+    // a recovery flow anyone completes.
     getBody: (data) =>
       [
         `Hi there,`,
         ``,
-        `You requested to reset your password.`,
-        `Use this token to reset it: ${data.token}`,
+        `You asked to reset your Ceedmart password. Open this link to choose`,
+        `a new one:`,
         ``,
-        `If you didn't request this, please ignore this email.`,
+        resetPasswordUrl(data.token),
+        ``,
+        `The link expires shortly and can only be used once.`,
+        ``,
+        `If you didn't ask for this, you can ignore this email — nothing has`,
+        `changed on your account.`,
         ``,
         `— Ceedmart`,
       ].join("\n"),
