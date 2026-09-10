@@ -54,13 +54,25 @@ if [[ -z "${SKIP_API:-}" ]]; then
   # workflows (e.g. process-import-chunks during a bulk product upload) can
   # progress between the 202 confirm response and the next inbound request.
   # Without this, large imports stall until something else hits the API.
+  #
+  # --memory=4Gi, raised from 2Gi. NODE_OPTIONS sets
+  # --max-old-space-size=3072, so the Node heap is allowed to reach 3 GB on
+  # its own — more than a 2 GiB container can hold before the runtime, native
+  # modules and the module graph are counted at all. That was survivable only
+  # while the working set stayed below the container limit by luck. The Phase
+  # 3 modules (preorder, build, build-catalog, auction, audit, terms,
+  # job-claim, listing-policy, notification-log) pushed startup to 2107 MiB
+  # and the instance was killed mid-boot:
+  #   "Memory limit of 2048 MiB exceeded with 2107 MiB used"
+  # 4 GiB puts the container ceiling above the heap cap rather than below it.
+  # If this is raised past 4 GiB, Cloud Run also requires --cpu>=2.
   gcloud run deploy "$API_SERVICE" \
     --project="$PROJECT" \
     --region="$REGION" \
     --image="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/api:${IMAGE_TAG}" \
     --port=9000 \
     --min-instances=1 --max-instances=1 \
-    --cpu=1 --memory=2Gi \
+    --cpu=1 --memory=4Gi \
     --timeout=600 \
     --no-cpu-throttling \
     --allow-unauthenticated \
