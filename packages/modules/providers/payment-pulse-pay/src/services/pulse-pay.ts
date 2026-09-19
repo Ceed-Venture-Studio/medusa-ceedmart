@@ -439,9 +439,41 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       typeof sessionData?.channel === "string" ? sessionData.channel.trim() : ""
     const channel = chosenChannel || (await this.resolveChannel(pimId))
 
-    const successUrl = new URL(this.successRedirectUrl)
+    // Send them back to the host they are actually on.
+    //
+    // The redirect used to be built entirely from STOREFRONT_URL, a single
+    // configured origin. ceedmart.com and www.ceedmart.com both serve the
+    // storefront, and a cookie set on one is not sent to the other — so a
+    // customer who checked out on www was returned to the apex, arrived
+    // without their cart cookie, and got a 404 on the review step. The
+    // payment had already been taken by then.
+    //
+    // The storefront knows its own origin and sends it; this only replaces
+    // the origin, never the path, and only when it parses and is https.
+    const withOrigin = (configured: string): URL => {
+      const url = new URL(configured)
+      const claimed =
+        typeof sessionData?.origin === "string" ? sessionData.origin.trim() : ""
+      if (!claimed) return url
+      try {
+        const origin = new URL(claimed)
+        // https only, and never point a customer at a host we were not
+        // already configured to use — an attacker-supplied origin here
+        // would be an open redirect carrying a session id.
+        if (origin.protocol !== "https:") return url
+        const base = url.hostname.replace(/^www\./, "")
+        const candidate = origin.hostname.replace(/^www\./, "")
+        if (candidate !== base) return url
+        url.hostname = origin.hostname
+        return url
+      } catch {
+        return url
+      }
+    }
+
+    const successUrl = withOrigin(this.successRedirectUrl)
     successUrl.searchParams.set("session_id", sessionId || "")
-    const failureUrl = new URL(this.failureRedirectUrl)
+    const failureUrl = withOrigin(this.failureRedirectUrl)
     failureUrl.searchParams.set("session_id", sessionId || "")
 
     const payload = {
