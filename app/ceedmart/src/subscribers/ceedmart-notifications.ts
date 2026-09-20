@@ -70,6 +70,19 @@ const resetPasswordUrl = (token: string): string =>
     token
   )}`
 
+// Where an operator goes to act on the order. ADMIN_CORS is a list of
+// allowed origins; the first is the admin we actually run. Unset falls back
+// to the hosted admin rather than producing a link to nowhere.
+const ADMIN_URL = (
+  process.env.ADMIN_CORS || "https://admin-core.ceedmart.com"
+)
+  .split(",")[0]
+  .trim()
+  .replace(/\/$/, "")
+
+const adminOrderUrl = (orderId: string): string =>
+  `${ADMIN_URL}/app/orders/${orderId}`
+
 const orderViewUrl = (orderId: string): string =>
   `${STOREFRONT_URL}/${STOREFRONT_COUNTRY}/order/${orderId}/confirmed`
 
@@ -230,6 +243,112 @@ const handlers: NotificationHandler[] = [
     getBody: () => "",
     getSmsBody: (data) =>
       `Ceedmart: Your order ${data.display_id ? "#" + data.display_id : ""} has been placed! We'll notify you when it ships.`,
+  },
+
+  // ── Order Placed: the shop's own copy ──
+  //
+  // Placing an order is the one event someone has to ACT on, and until now
+  // nothing told them it had happened — the customer got an email and an
+  // SMS, the shop got silence and a dashboard nobody is watching at 6am.
+  //
+  // Recipients come from the environment, and an unset value means silent
+  // rather than broken — the same contract LOW_STOCK_ALERT_EMAIL and
+  // STOCK_TRANSFER_ALERT_EMAIL already use.
+  {
+    event: "order.placed",
+    channel: "email",
+    subject: "New Ceedmart order",
+    template: "order-placed-admin",
+    entity: "order",
+    fields: [
+      "id",
+      "email",
+      "display_id",
+      "currency_code",
+      "summary.*",
+      "shipping_address.*",
+      "*items",
+      "items.title",
+      "items.product_title",
+      "items.variant_title",
+      "items.unit_price",
+      "items.detail.quantity",
+      "*shipping_methods",
+    ],
+    getTo: () => (process.env.ORDER_ALERT_EMAIL || "").trim() || undefined,
+    getBody: (data) => {
+      const orderRef = data.display_id ? `#${data.display_id}` : data.id
+      const addr = data.shipping_address ?? {}
+      const name = [addr.first_name, addr.last_name].filter(Boolean).join(" ")
+      const items = data.items ?? []
+      const method = (data.shipping_methods ?? [])[0]?.name
+
+      // Everything needed to start picking, in the body. An operator
+      // reading this on a phone should not have to open the admin to know
+      // what was bought and where it is going.
+      const lines: string[] = [
+        `New order ${orderRef}.`,
+        ``,
+        `Customer: ${name || "(no name)"}`,
+        `Email:    ${data.email || "(none)"}`,
+        `Phone:    ${addr.phone || "(none)"}`,
+      ]
+
+      if (method) lines.push(`Fulfilment: ${method}`)
+
+      const where = [addr.address_1, addr.city, addr.province]
+        .filter(Boolean)
+        .join(", ")
+      if (where) lines.push(`Deliver to: ${where}`)
+
+      const itemsBlock = renderItemsList(items, data.currency_code)
+      if (itemsBlock) lines.push(``, `Items:`, itemsBlock)
+
+      lines.push(
+        ``,
+        `Total: ${formatMoney(orderTotal(data), data.currency_code)}`,
+        ``,
+        `Open in admin: ${adminOrderUrl(data.id)}`,
+        ``,
+        `— Ceedmart`
+      )
+      return lines.join("\n")
+    },
+  },
+  {
+    event: "order.placed",
+    channel: "sms",
+    template: "order-placed-admin-sms",
+    entity: "order",
+    fields: [
+      "id",
+      "display_id",
+      "currency_code",
+      "summary.*",
+      "shipping_address.first_name",
+      "shipping_address.last_name",
+      "shipping_address.city",
+      "*items",
+      "items.detail.quantity",
+    ],
+    getTo: () => (process.env.ORDER_ALERT_PHONE || "").trim() || undefined,
+    getBody: () => "",
+    // One line, because it is a nudge to go and look — the email carries
+    // the detail. Item COUNT rather than a list: an SMS that runs to three
+    // messages costs three times as much and is read no more carefully.
+    getSmsBody: (data) => {
+      const orderRef = data.display_id ? `#${data.display_id}` : ""
+      const count = (data.items ?? []).reduce(
+        (n: number, it: any) => n + (Number(it.detail?.quantity ?? 1) || 1),
+        0
+      )
+      const addr = data.shipping_address ?? {}
+      const who = [addr.first_name, addr.last_name].filter(Boolean).join(" ")
+      const total = formatMoney(orderTotal(data), data.currency_code)
+      return `Ceedmart: new order ${orderRef} — ${count} item(s), ${total}${
+        who ? `, ${who}` : ""
+      }${addr.city ? ` (${addr.city})` : ""}.`
+    },
   },
 
   // ── Order Canceled ──
