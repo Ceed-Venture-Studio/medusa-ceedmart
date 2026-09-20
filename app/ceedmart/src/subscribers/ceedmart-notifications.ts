@@ -116,6 +116,26 @@ const renderItemsList = (items: any[] = [], currency?: string): string => {
     .join("\n")
 }
 
+// ── Who to reach, and where that actually lives ─────────────────────────
+//
+// Checkout requires an email and a phone from every customer, so an order
+// always carries both — but not where you would guess. `email` is on the
+// order; `phone` is NOT. It exists only inside the addresses, and the old
+// SMS fallback read `data.phone`, a field the order does not have, so a
+// missing shipping phone meant no text rather than the billing one.
+//
+// Billing is a real fallback rather than a theoretical one: a pickup order
+// collects contact details only and submits them as both addresses, and a
+// customer using a saved address may have the number on just one of them.
+const customerEmail = (data: any): string | undefined =>
+  data?.email || data?.customer?.email || undefined
+
+const customerPhone = (data: any): string | undefined =>
+  data?.shipping_address?.phone ||
+  data?.billing_address?.phone ||
+  data?.customer?.phone ||
+  undefined
+
 const orderTotal = (data: any): number => {
   // summary.current_order_total holds the canonical post-edit total once
   // Medusa's order summary has been populated; in admin REST contexts the
@@ -184,8 +204,9 @@ const handlers: NotificationHandler[] = [
       "items.unit_price",
       // items[].detail is the OrderItem junction that carries quantity.
       "items.detail.quantity",
+      "customer.email",
     ],
-    getTo: (data) => data.email,
+    getTo: (data) => customerEmail(data),
     getBody: (data) => {
       const orderRef = data.display_id ? `#${data.display_id}` : data.id
       const greeting = data.shipping_address?.first_name || "there"
@@ -238,8 +259,14 @@ const handlers: NotificationHandler[] = [
     channel: "sms",
     template: "order-placed-sms",
     entity: "order",
-    fields: ["id", "display_id", "shipping_address.*", "phone"],
-    getTo: (data) => data.shipping_address?.phone || data.phone,
+    fields: [
+      "id",
+      "display_id",
+      "shipping_address.*",
+      "billing_address.phone",
+      "customer.phone",
+    ],
+    getTo: (data) => customerPhone(data),
     getBody: () => "",
     getSmsBody: (data) =>
       `Ceedmart: Your order ${data.display_id ? "#" + data.display_id : ""} has been placed! We'll notify you when it ships.`,
@@ -274,6 +301,9 @@ const handlers: NotificationHandler[] = [
       "items.unit_price",
       "items.detail.quantity",
       "*shipping_methods",
+      "billing_address.phone",
+      "customer.email",
+      "customer.phone",
     ],
     getTo: () => (process.env.ORDER_ALERT_EMAIL || "").trim() || undefined,
     getBody: (data) => {
@@ -290,8 +320,8 @@ const handlers: NotificationHandler[] = [
         `New order ${orderRef}.`,
         ``,
         `Customer: ${name || "(no name)"}`,
-        `Email:    ${data.email || "(none)"}`,
-        `Phone:    ${addr.phone || "(none)"}`,
+        `Email:    ${customerEmail(data) || "(none)"}`,
+        `Phone:    ${customerPhone(data) || "(none)"}`,
       ]
 
       if (method) lines.push(`Fulfilment: ${method}`)
@@ -403,8 +433,14 @@ const handlers: NotificationHandler[] = [
     channel: "sms",
     template: "order-shipped-sms",
     entity: "order",
-    fields: ["id", "display_id", "shipping_address.*"],
-    getTo: (data) => data.shipping_address?.phone,
+    fields: [
+      "id",
+      "display_id",
+      "shipping_address.*",
+      "billing_address.phone",
+      "customer.phone",
+    ],
+    getTo: (data) => customerPhone(data),
     getBody: () => "",
     getSmsBody: (data) =>
       `Ceedmart: Your order ${data.display_id ? "#" + data.display_id : ""} has been shipped!`,
