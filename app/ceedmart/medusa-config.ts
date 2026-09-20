@@ -258,6 +258,12 @@ export default defineConfig({
               // preferable to silently dropping real payments in an
               // environment nobody has configured yet.
               webhookSecret: process.env.PULSE_WEBHOOK_SECRET,
+              // The one that actually authenticates a delivery: HMAC-SHA512
+              // over the raw body, sent as X-Pulse-Signature. Read it from
+              // GET /Webhooks/signing-secret?paymentProcessor=1 with a token
+              // holding keys.provider.manage. Until it is set, webhooks are
+              // accepted unverified and confirm-by-reading carries the load.
+              webhookSigningSecret: process.env.PULSE_WEBHOOK_SIGNING_SECRET,
               tenantId: process.env.PULSE_IDENTITY_TENANT_ID,
               bearerToken: process.env.PULSE_PAYMENT_BEARER_TOKEN,
               // Points at a local Pulse Pay instance for validation. The

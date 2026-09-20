@@ -55,7 +55,19 @@ type PulsePayOptions = {
    * it will not decide on its own which provider takes a customer's money.
    */
   channel?: string
+  /**
+   * Legacy `Pulse-Webhook-Hash` value. Pulse's own spec calls this "a single
+   * static value, identical for every tenant, and therefore not proof of
+   * anything", and says it will be removed. Kept only to recognise it, never
+   * to authenticate on.
+   */
   webhookSecret?: string
+  /**
+   * The real one: HMAC-SHA512 signing secret for `X-Pulse-Signature`.
+   * Read from GET /Webhooks/signing-secret?paymentProcessor=<n> with a token
+   * holding `keys.provider.manage`, and scoped to this tenant.
+   */
+  webhookSigningSecret?: string
   baseUrl?: string
   successRedirectUrl?: string
   failureRedirectUrl?: string
@@ -165,6 +177,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   private applicationId: string
   private channel: string
   private webhookSecret?: string
+  private webhookSigningSecret?: string
   private baseUrl: string
   private successRedirectUrl: string
   private failureRedirectUrl: string
@@ -201,6 +214,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
     this.applicationId = options.applicationId || ""
     this.channel = options.channel || ""
     this.webhookSecret = options.webhookSecret
+    this.webhookSigningSecret = options.webhookSigningSecret
     this.baseUrl = options.baseUrl || PULSE_PAY_BASE_URL
     this.successRedirectUrl =
       options.successRedirectUrl || "http://localhost:8000/ng/checkout?step=review"
@@ -834,37 +848,74 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
    * payments.
    */
   private webhookSenderIsTrusted(
-    headers: Record<string, any> | undefined
+    headers: Record<string, any> | undefined,
+    rawBody: Buffer | string | undefined
   ): boolean {
-    if (!this.webhookSecret) {
-      return true
+    const header = (name: string): string =>
+      String(
+        headers?.[name] ??
+          headers?.[name.toLowerCase()] ??
+          headers?.[name.toUpperCase()] ??
+          ""
+      ).trim()
+
+    // ── The real gate: X-Pulse-Signature ────────────────────────────────
+    //
+    // HMAC-SHA512 over the RAW body, hex lowercase, per Pulse's
+    // OUTBOUND_WEBHOOK_SIGNING spec. Raw, because re-serialising parsed JSON
+    // changes whitespace and key order and the digest never matches again.
+    if (this.webhookSigningSecret) {
+      const supplied = header("X-Pulse-Signature")
+      if (!supplied) {
+        console.warn(
+          "Pulse webhook: rejected, no X-Pulse-Signature and a signing secret is configured"
+        )
+        return false
+      }
+      if (rawBody === undefined || rawBody === null) {
+        // Without the exact bytes there is nothing to verify against, and
+        // guessing from the parsed object would pass forgeries.
+        console.warn(
+          "Pulse webhook: rejected, raw body unavailable for signature check"
+        )
+        return false
+      }
+
+      const expected = crypto
+        .createHmac("sha512", this.webhookSigningSecret)
+        .update(
+          typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody
+        )
+        .digest("hex")
+
+      const a = Buffer.from(expected, "utf8")
+      const b = Buffer.from(supplied.toLowerCase(), "utf8")
+      const ok = a.length === b.length && crypto.timingSafeEqual(a, b)
+      if (!ok) {
+        console.warn("Pulse webhook: rejected, X-Pulse-Signature did not match")
+      }
+      return ok
     }
 
-    const supplied = String(
-      headers?.["pulse-webhook-hash"] ?? headers?.["Pulse-Webhook-Hash"] ?? ""
-    ).trim()
-    if (!supplied) {
-      return false
-    }
-
-    // Accept the base64 form Pulse sends and the bare secret, so a change of
-    // encoding on their side is not an outage on ours.
-    const expected = this.webhookSecret
-      .split(",")
-      .map((secret) => secret.trim())
-      .filter(Boolean)
-      .flatMap((secret) => [
-        Buffer.from(secret, "utf8").toString("base64"),
-        secret,
-      ])
-
-    return expected.some((candidate) => {
-      const a = Buffer.from(candidate, "utf8")
-      const b = Buffer.from(supplied, "utf8")
-      // Length is compared first because timingSafeEqual throws on a
-      // mismatch; length is not the secret, so leaking it costs nothing.
-      return a.length === b.length && crypto.timingSafeEqual(a, b)
-    })
+    // ── No signing secret configured ────────────────────────────────────
+    //
+    // We deliberately do NOT fall back to Pulse-Webhook-Hash. Their spec is
+    // explicit that it is "a single static value, identical for every tenant,
+    // and therefore not proof of anything", and that it is being removed.
+    // Gating on it bought no security and cost real orders: our value and
+    // theirs differed, so every genuine delivery was thrown away while a
+    // forger who read the docs would have sailed through.
+    //
+    // So this is open until the signing secret is set — which is safe here
+    // for a reason that predates it: getWebhookActionAndData discards the
+    // status the webhook claims and re-reads the payment from Pulse over an
+    // authenticated call. A forged event cannot invent a payment; the worst
+    // it achieves is making us look one up.
+    console.warn(
+      "Pulse webhook: accepted WITHOUT signature verification — set " +
+        "PULSE_WEBHOOK_SIGNING_SECRET (GET /Webhooks/signing-secret) to close this"
+    )
+    return true
   }
 
   /**
@@ -890,16 +941,14 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   ): Promise<WebhookActionResult> {
     const event = payload.data as Record<string, any>
 
-    // Logged once per webhook so the header carrying Pulse's secretHash can
-    // be identified from real traffic. The moment we know its name and
-    // whether it is a plain value or an HMAC over the raw body, verification
-    // can be added here and the confirm-by-reading below becomes a second
-    // line of defence rather than the only one.
-    if (!this.webhookSenderIsTrusted(payload.headers as any)) {
-      // Deliberately terse, and deliberately not an error: an unverified
-      // caller should learn nothing, and a flood of them should not fill the
-      // log with stack traces.
-      console.warn("Pulse webhook: rejected, pulse-webhook-hash did not match")
+    if (
+      !this.webhookSenderIsTrusted(
+        payload.headers as any,
+        payload.rawData as Buffer | string | undefined
+      )
+    ) {
+      // The verifier has already said which check failed and why; repeating
+      // it here told every rejection the same wrong story.
       return {
         action: PaymentActions.NOT_SUPPORTED,
         data: { session_id: "", amount: new BigNumber(0) },
