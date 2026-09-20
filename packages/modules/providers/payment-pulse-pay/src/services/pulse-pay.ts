@@ -178,6 +178,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
   private channel: string
   private webhookSecret?: string
   private webhookSigningSecret?: string
+  private container_: Record<string, unknown>
   private baseUrl: string
   private successRedirectUrl: string
   private failureRedirectUrl: string
@@ -205,6 +206,7 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
 
   constructor(container: Record<string, unknown>, options: PulsePayOptions) {
     super(container, options)
+    this.container_ = container
     this.apiKey = options.apiKey
     this.tenantId = options.tenantId
     this.bearerToken = options.bearerToken
@@ -847,6 +849,66 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
    * misconfigured environment working rather than silently dropping real
    * payments.
    */
+  /**
+   * Has this delivery already been handled?
+   *
+   * Pulse delivers at-least-once and retries five times; Medusa's event bus
+   * retries on top of that. So the same charge.success arrives more than
+   * once as a matter of course, not as an edge case, and their spec makes
+   * deduplication a requirement rather than a nicety.
+   *
+   * Keyed on TransactionRef — the provider's own reference, which Pulse
+   * documents as stable across retries. Id changes per delivery attempt and
+   * would defeat the whole thing.
+   *
+   * Backed by job_claim's INSERT ... ON CONFLICT, so two workers racing the
+   * same retry resolve atomically in the database. A cache read-then-write
+   * would let both through, which is the failure this is here to prevent.
+   *
+   * Fails OPEN. If the claim cannot be taken — module missing, database
+   * unreachable — we process the webhook. A duplicate authorisation on an
+   * already-authorised session is close to harmless; dropping the only
+   * notice that a customer has paid is not.
+   */
+  private async alreadyHandled(transactionRef: string): Promise<boolean> {
+    if (!transactionRef) {
+      // Nothing stable to key on. Processing twice beats not at all.
+      return false
+    }
+    try {
+      const claims: any = (this.container_ as any)?.resolve?.("job_claim")
+      if (!claims?.tryClaim) {
+        return false
+      }
+      // A day: comfortably past Pulse's five attempts (capped at five
+      // minutes apart) and any event-bus retry, without keeping rows for ever.
+      const won = await claims.tryClaim(
+        "pulse-webhook",
+        transactionRef,
+        60 * 60 * 24
+      )
+      return !won
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Give the dedupe claim back, so a retry is allowed to try again.
+   *
+   * Only ever after a FAILURE. Releasing on success would remove the very
+   * protection the claim exists to provide.
+   */
+  private async releaseHandled(transactionRef: string): Promise<void> {
+    if (!transactionRef) return
+    try {
+      const claims: any = (this.container_ as any)?.resolve?.("job_claim")
+      await claims?.releaseClaim?.("pulse-webhook", transactionRef)
+    } catch {
+      // Nothing useful to do. The claim expires on its own within the day.
+    }
+  }
+
   private webhookSenderIsTrusted(
     headers: Record<string, any> | undefined,
     rawBody: Buffer | string | undefined
@@ -965,6 +1027,23 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
       const metadata = this.parseMetadata(rawMetadata)
       const sessionId = metadata?.session_id || ""
 
+      // At-least-once delivery means this is a normal event, not an attack.
+      // Claimed before any work is done, so a retry arriving while the first
+      // attempt is still running is turned away rather than racing it.
+      const transactionRef =
+        this.getField(event, "transactionRef", "TransactionRef") ||
+        this.getField(event, "transaction_ref", "Transaction_Ref") ||
+        ""
+      if (await this.alreadyHandled(String(transactionRef))) {
+        console.log(
+          `Pulse webhook: ${transactionRef} already handled, ignoring duplicate`
+        )
+        return {
+          action: PaymentActions.NOT_SUPPORTED,
+          data: { session_id: sessionId, amount: new BigNumber(0) },
+        }
+      }
+
       // The customer id used to authenticate the confirmation call.
       //
       // Our own metadata first. CustomerId is a fallback and only when it
@@ -1056,6 +1135,11 @@ class PulsePayService extends AbstractPaymentProvider<PulsePayOptions> {
             `Pulse webhook: could not confirm ${pulseId} for session ${sessionId}: ` +
               `${err?.message ?? err} — throwing so the event is retried`
           )
+          // Hand the claim back first. Without this the retry we are asking
+          // for would arrive, see the claim we took on the way in, and be
+          // discarded as a duplicate — the dedupe would swallow the very
+          // recovery it was meant to allow.
+          await this.releaseHandled(String(transactionRef))
           throw err
         }
       }

@@ -246,6 +246,23 @@ export default defineConfig({
     [Modules.PAYMENT]: {
       resolve: "@medusajs/payment",
       options: {
+        // How hard Medusa tries to process a webhook it has already
+        // acknowledged.
+        //
+        // /hooks/payment/:provider answers 200 and emits to the event bus
+        // before the provider runs, so Pulse counts the delivery as
+        // successful the moment it lands. Their five retries can therefore
+        // never help us: from their side nothing failed. Whatever resilience
+        // a failed HANDLER gets has to come from this queue.
+        //
+        // Three attempts was the default and too few — the provider
+        // deliberately throws when it cannot confirm a payment with Pulse,
+        // which is exactly the transient case worth retrying.
+        webhook_retries: 8,
+        // 5s was chosen so the redirect-driven placement wins the race in
+        // the normal case. Keep that, since the first attempt is usually the
+        // one that counts.
+        webhook_delay: 5000,
         providers: [
           {
             resolve: "@medusajs/payment-pulse-pay",
