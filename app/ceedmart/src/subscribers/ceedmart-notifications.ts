@@ -20,6 +20,10 @@ type NotificationHandler = {
   getTo: (data: any) => string | undefined
   getBody: (data: any) => string
   getSmsBody?: (data: any) => string
+  /** Return true to say nothing for this particular entity. Distinct from
+   *  getTo returning undefined, which means "no address"; this means "there
+   *  is an address and we deliberately are not writing to it". */
+  skipWhen?: (data: any) => boolean
 }
 
 // The Pulse Pay notification provider renders the body as plain text inside
@@ -127,6 +131,28 @@ const renderItemsList = (items: any[] = [], currency?: string): string => {
 // Billing is a real fallback rather than a theoretical one: a pickup order
 // collects contact details only and submits them as both addresses, and a
 // customer using a saved address may have the number on just one of them.
+// ── Was this rung up at a till? ─────────────────────────────────────────
+//
+// A POS sale emits order.placed exactly like a web order, so the customer
+// standing at the counter was getting an email and an SMS about the thing
+// they had just been handed, and the shop was texting itself about a sale
+// its own cashier had made.
+//
+// Keyed on channel === "in-store" and nothing else. The POS has one
+// order-creation path and stamps that value on the draft immediately before
+// converting it, so a till sale is always marked.
+//
+// Deliberately NOT the inverse test. The storefront only writes
+// channel: "online" when the customer touches the delivery/pickup selector,
+// so a web order can carry no channel at all — and "notify only when
+// explicitly online" would silently drop those confirmations. Absent means
+// notify; only an explicit in-store marker silences us.
+//
+// store_id is not usable here either: an online PICKUP order carries the
+// shop's id too, and suppressing on it would mute genuine web orders.
+const isTillSale = (data: any): boolean =>
+  (data?.metadata?.ceedmart?.channel ?? null) === "in-store"
+
 const customerEmail = (data: any): string | undefined =>
   data?.email || data?.customer?.email || undefined
 
@@ -205,8 +231,10 @@ const handlers: NotificationHandler[] = [
       // items[].detail is the OrderItem junction that carries quantity.
       "items.detail.quantity",
       "customer.email",
+      "metadata",
     ],
     getTo: (data) => customerEmail(data),
+    skipWhen: isTillSale,
     getBody: (data) => {
       const orderRef = data.display_id ? `#${data.display_id}` : data.id
       const greeting = data.shipping_address?.first_name || "there"
@@ -265,8 +293,10 @@ const handlers: NotificationHandler[] = [
       "shipping_address.*",
       "billing_address.phone",
       "customer.phone",
+      "metadata",
     ],
     getTo: (data) => customerPhone(data),
+    skipWhen: isTillSale,
     getBody: () => "",
     getSmsBody: (data) =>
       `Ceedmart: Your order ${data.display_id ? "#" + data.display_id : ""} has been placed! We'll notify you when it ships.`,
@@ -304,8 +334,10 @@ const handlers: NotificationHandler[] = [
       "billing_address.phone",
       "customer.email",
       "customer.phone",
+      "metadata",
     ],
     getTo: () => (process.env.ORDER_ALERT_EMAIL || "").trim() || undefined,
+    skipWhen: isTillSale,
     getBody: (data) => {
       const orderRef = data.display_id ? `#${data.display_id}` : data.id
       const addr = data.shipping_address ?? {}
@@ -360,8 +392,10 @@ const handlers: NotificationHandler[] = [
       "shipping_address.city",
       "*items",
       "items.detail.quantity",
+      "metadata",
     ],
     getTo: () => (process.env.ORDER_ALERT_PHONE || "").trim() || undefined,
+    skipWhen: isTillSale,
     getBody: () => "",
     // One line, because it is a nudge to go and look — the email carries
     // the detail. Item COUNT rather than a list: an SMS that runs to three
@@ -666,6 +700,13 @@ export default async function ceedmartNotifications({
       }
 
       for (const entity of entities) {
+        if (handler.skipWhen?.(entity)) {
+          logger.info(
+            `[Ceedmart] Skipping ${event.name} (${handler.channel}) for ${entity?.id ?? "?"} — not an online order`
+          )
+          continue
+        }
+
         const to = handler.getTo(entity)
         if (!to) {
           logger.warn(
