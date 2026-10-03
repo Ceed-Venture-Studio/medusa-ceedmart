@@ -25,6 +25,12 @@ import { sendNotification } from "../lib/notifications/send"
 // low. Once it restocks above threshold the key is cleared so the next
 // dip re-alerts immediately.
 
+// PAUSED (Oct 2026): low-stock emails are switched off for now. Set this to
+// false to turn them back on. The handler returns before touching the
+// database or cache, so no dedupe keys pile up while paused and the first
+// dip after re-enabling alerts straight away.
+const LOW_STOCK_ALERTS_PAUSED = true
+
 const DEDUPE_TTL_SECONDS = 3 * 24 * 60 * 60
 const DEFAULT_THRESHOLD_ENV = "LOW_STOCK_DEFAULT_THRESHOLD"
 const RECIPIENT_ENV = "LOW_STOCK_ALERT_EMAIL"
@@ -175,6 +181,8 @@ export default async function lowStockAlertsHandler({
   event,
   container,
 }: SubscriberArgs<any>) {
+  if (LOW_STOCK_ALERTS_PAUSED) return
+
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
   const recipient = (process.env[RECIPIENT_ENV] || "").trim()
   if (!recipient) {
