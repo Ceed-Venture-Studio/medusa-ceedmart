@@ -26,7 +26,7 @@ export const PriceListPricesEdit = () => {
     price_list_id: [id!],
     // TODO: Remove exclusion once we avoid including unnecessary relations by default in the query config
     fields:
-      "title,thumbnail,*variants,-type,-collection,-options,-tags,-images,-sales_channels",
+      "title,thumbnail,*variants,variants.prices.amount,variants.prices.currency_code,variants.prices.min_quantity,variants.prices.price_list_id,variants.prices.price_rules.value,variants.prices.price_rules.attribute,-type,-collection,-options,-tags,-images,-sales_channels",
   })
 
   const { isReady, regions, currencies, pricePreferences } =

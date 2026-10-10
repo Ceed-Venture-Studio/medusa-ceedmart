@@ -65,6 +65,36 @@ export const isProductRow = (
   return "variants" in row
 }
 
+/**
+ * What a variant sells for today in the given currency, for the read-only
+ * "Current price" column of the price list grids.
+ *
+ * Only a plain base price counts: rows that belong to a price list,
+ * quantity-break rows (min_quantity above 1) and region-specific prices are
+ * not "the price" of the variant.
+ */
+export const getVariantCurrentPrice = (
+  variant: HttpTypes.AdminProductVariant,
+  currencyCode: string
+): number | null => {
+  for (const price of (variant.prices ?? []) as any[]) {
+    if (price.price_list_id || price.price_list?.id) {
+      continue
+    }
+    if (price.min_quantity != null && Number(price.min_quantity) > 1) {
+      continue
+    }
+    if (Object.keys(price.rules ?? {}).length) {
+      continue
+    }
+    if (price.currency_code === currencyCode) {
+      return price.amount
+    }
+  }
+
+  return null
+}
+
 const extractPricesFromVariants = (
   variantId: string,
   variant: PriceListCreateProductVariantSchema,

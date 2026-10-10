@@ -8,9 +8,11 @@ import {
   createDataGridHelper,
   DataGrid,
 } from "../../../../components/data-grid"
-import { createDataGridPriceColumns } from "../../../../components/data-grid/helpers/create-data-grid-price-columns"
+import { DataGridCurrencyCell } from "../../../../components/data-grid/components/data-grid-currency-cell"
+import { IncludesTaxTooltip } from "../../../../components/common/tax-badge/tax-badge"
+import { getLocaleAmount } from "../../../../lib/money-amount-helpers"
 import { PricingCreateSchemaType } from "../../price-list-create/components/price-list-create-form/schema"
-import { isProductRow } from "../utils"
+import { getVariantCurrentPrice, isProductRow } from "../utils"
 
 const columnHelper = createDataGridHelper<
   HttpTypes.AdminProduct | HttpTypes.AdminProductVariant,
@@ -27,6 +29,10 @@ export const usePriceListGridColumns = ({
   pricePreferences?: HttpTypes.AdminPricePreference[]
 }) => {
   const { t } = useTranslation()
+
+  const currencyCode = (
+    currencies.find((c) => c.is_default) ?? currencies[0]
+  )?.currency_code
 
   const colDefs: ColumnDef<
     HttpTypes.AdminProduct | HttpTypes.AdminProductVariant
@@ -58,34 +64,77 @@ export const usePriceListGridColumns = ({
         },
         disableHiding: true,
       }),
-      ...createDataGridPriceColumns<
-        HttpTypes.AdminProduct | HttpTypes.AdminProductVariant,
-        PricingCreateSchemaType
-      >({
-        currencies: currencies.map((c) => c.currency_code),
-        regions,
-        pricePreferences,
-        isReadyOnly: (context) => {
-          const entity = context.row.original
-          return isProductRow(entity)
-        },
-        getFieldName: (context, value) => {
-          const entity = context.row.original
+      // Ceedmart: a price list is edited as two columns rather than one per
+      // currency and region. "Current price" shows what the variant sells
+      // for today; "Discounted price" is the price list's price in the
+      // store's default currency, which applies wherever that currency is
+      // sold (web and POS alike). Leave it empty and the variant keeps its
+      // current price.
+      ...(currencyCode
+        ? [
+            columnHelper.column({
+              id: "current_price",
+              name: "Current price",
+              header: `Current price (${currencyCode.toUpperCase()})`,
+              cell: (context) => {
+                const entity = context.row.original
+                if (isProductRow(entity)) {
+                  return <DataGrid.ReadonlyCell context={context} />
+                }
 
-          if (isProductRow(entity)) {
-            return null
-          }
+                const amount = getVariantCurrentPrice(entity, currencyCode)
 
-          if (context.column.id?.startsWith("currency_prices")) {
-            return `products.${entity.product_id}.variants.${entity.id}.currency_prices.${value}.amount`
-          }
+                return (
+                  <DataGrid.ReadonlyCell context={context}>
+                    {amount != null ? getLocaleAmount(amount, currencyCode) : "-"}
+                  </DataGrid.ReadonlyCell>
+                )
+              },
+              disableHiding: true,
+            }),
+            columnHelper.column({
+              id: `currency_prices.${currencyCode}`,
+              name: "Discounted price",
+              header: () => (
+                <div className="flex w-full items-center justify-between gap-3">
+                  <span className="truncate">
+                    {`Discounted price (${currencyCode.toUpperCase()})`}
+                  </span>
+                  <IncludesTaxTooltip
+                    includesTax={
+                      pricePreferences.find(
+                        (p) =>
+                          p.attribute === "currency_code" &&
+                          p.value === currencyCode
+                      )?.is_tax_inclusive
+                    }
+                  />
+                </div>
+              ),
+              field: (context) => {
+                const entity = context.row.original
+                if (isProductRow(entity)) {
+                  return null
+                }
 
-          return `products.${entity.product_id}.variants.${entity.id}.region_prices.${value}.amount`
-        },
-        t,
-      }),
+                return `products.${entity.product_id}.variants.${entity.id}.currency_prices.${currencyCode}.amount`
+              },
+              type: "number",
+              cell: (context) => {
+                if (isProductRow(context.row.original)) {
+                  return <DataGrid.ReadonlyCell context={context} />
+                }
+
+                return (
+                  <DataGridCurrencyCell code={currencyCode} context={context} />
+                )
+              },
+              disableHiding: true,
+            }),
+          ]
+        : []),
     ]
-  }, [t, currencies, regions, pricePreferences])
+  }, [t, currencyCode, pricePreferences])
 
   return colDefs
 }

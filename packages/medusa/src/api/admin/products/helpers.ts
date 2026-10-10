@@ -76,6 +76,9 @@ export const remapVariantResponse = (
       currency_code: price.currency_code,
       min_quantity: price.min_quantity,
       max_quantity: price.max_quantity,
+      // Lets the admin tell a variant's base price from a price list's
+      // price — both live on the same price set.
+      price_list_id: (price as any).price_list_id ?? null,
       variant_id: variant.id,
       created_at: price.created_at,
       updated_at: price.updated_at,
