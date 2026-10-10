@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import { BANNER_MODULE } from "../../../modules/banner"
 import { isValidSlotKey } from "../../../lib/banner/slots"
+import { resolveStoreSalesChannelId } from "../../../lib/web-locations"
 
 // GET /store/banners?slot=home_hero_desktop
 // Returns active banners for the slot, optionally scoped to a sales channel
@@ -20,8 +21,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const limit = Math.min(Number(req.query.limit ?? 10), 50)
   const now = new Date()
 
-  const pk = (req as any).publishable_key_context
-  const salesChannelId = pk?.sales_channel_ids?.[0] ?? null
+  const salesChannelId = await resolveStoreSalesChannelId(req as any)
 
   const filters: Record<string, any> = {
     slot,

@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/util
 import { calculateLoad, type ApplianceInput } from "../../../../lib/solar/calculate"
 import { recommend } from "../../../../lib/solar/recommend"
 import { SOLAR_MODULE } from "../../../../modules/solar"
+import { resolveStoreSalesChannelId } from "../../../../lib/web-locations"
 
 type Body = {
   appliances: ApplianceInput[]
@@ -19,8 +20,8 @@ export const POST = async (req: MedusaRequest<Body>, res: MedusaResponse) => {
 
   const load = calculateLoad(appliances)
 
-  const pk = (req as any).publishable_key_context
-  const salesChannelId = pk?.sales_channel_ids?.[0] ?? undefined
+  const salesChannelId =
+    (await resolveStoreSalesChannelId(req as any)) ?? undefined
 
   const result = await recommend(req.scope, load, { sales_channel_id: salesChannelId })
 
