@@ -25,8 +25,8 @@ import {
 //     has_more, so a one-shot incremental that hits the page cap can be
 //     drained with ?since=... combined with ?offset=... follow-ups.
 //
-// Soft-deleted product ids are returned in deleted_ids so the client can
-// drop them from its local cache.
+// Soft-deleted and unpublished product ids are returned in deleted_ids so
+// the client can drop them from its local cache.
 
 const POS_SYNC_FIELDS = [
   "id",
@@ -184,8 +184,27 @@ export const GET = async (
       }
     }
 
+    // Deleting a variant does not touch product.updated_at either, so a
+    // device keeps offering the removed variant and the draft order refuses
+    // it at checkout ("Variants ... do not exist"). Re-send the owning
+    // products; the client replaces a product's variant set on upsert.
+    const { data: deletedVariants } = await query.graph({
+      entity: "variant",
+      fields: ["product_id"],
+      filters: { deleted_at: { $gt: sinceDate } },
+      withDeleted: true,
+      pagination: { take: 10_000, skip: 0 },
+    } as any).catch(() => ({ data: [] as any[] }))
+    const variantDeletedProductIds = Array.from(
+      new Set((deletedVariants as any[]).map((v) => v.product_id))
+    ).filter((pid) => channelProductIds.includes(pid))
+
     const extraProductIds = Array.from(
-      new Set([...inventoryChangedProductIds, ...priceChangedProductIds])
+      new Set([
+        ...inventoryChangedProductIds,
+        ...priceChangedProductIds,
+        ...variantDeletedProductIds,
+      ])
     )
 
     if (extraProductIds.length) {
@@ -261,6 +280,27 @@ export const GET = async (
       pagination: { take: 10_000, skip: 0 },
     } as any).catch(() => ({ data: [] as any[] }))
     deleted_ids = deleted.map((p: any) => p.id)
+
+    // Unpublished products never come back through the main query (it
+    // filters on status), so a device that cached a product while it was
+    // published would keep selling it after it went back to draft — and the
+    // draft order rejects it at checkout. Purge them. Deliberately not bound
+    // by `since`: this also clears copies cached before this check existed.
+    // Sent on the first page only; the client's delete is idempotent.
+    if (offset === 0) {
+      const { data: unpublished } = await query.graph({
+        entity: "product",
+        fields: ["id"],
+        filters: {
+          id: channelProductIds,
+          status: { $ne: "published" },
+        },
+        pagination: { take: 10_000, skip: 0 },
+      })
+      deleted_ids = Array.from(
+        new Set([...deleted_ids, ...(unpublished as any[]).map((p) => p.id)])
+      )
+    }
   }
 
   res.json({
