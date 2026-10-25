@@ -64,3 +64,20 @@ export const resolveStoreSalesChannelId = async (
   const defaultId = await getDefaultSalesChannelId(req.scope)
   return defaultId && ids.includes(defaultId) ? defaultId : ids[0]
 }
+
+/**
+ * Ids of every per-location web channel, found by their metadata marker
+ * rather than by name, so a renamed channel or a new location is picked up
+ * without a code change.
+ */
+export const getWebSalesChannelIds = async (
+  container: MedusaContainer
+): Promise<string[]> => {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const { data: channels } = await query.graph({
+    entity: "sales_channel",
+    fields: ["id", "metadata"],
+    pagination: { skip: 0, take: 1_000 },
+  })
+  return (channels as any[]).filter((c) => webLocationOf(c)).map((c) => c.id)
+}

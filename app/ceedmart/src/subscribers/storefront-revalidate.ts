@@ -1,5 +1,5 @@
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/medusa"
+import { revalidateStorefront } from "../lib/storefront-revalidate"
 
 /**
  * Tells the storefront to drop its Next.js cache for global resources whenever
@@ -60,38 +60,9 @@ export default async function storefrontRevalidate({
   event,
   container,
 }: SubscriberArgs<unknown>) {
-  const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
-
-  const url = process.env.STOREFRONT_REVALIDATE_URL
-  const secret = process.env.REVALIDATE_SECRET
-  if (!url || !secret) return
-
   const tags = EVENT_TAG_MAP[event.name]
   if (!tags?.length) return
-
-  const params = new URLSearchParams()
-  for (const t of tags) params.append("tag", t)
-
-  try {
-    const res = await fetch(`${url}?${params.toString()}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${secret}` },
-    })
-    if (!res.ok) {
-      logger.warn(
-        `[storefront-revalidate] ${event.name} → ${res.status} ${res.statusText}`
-      )
-      return
-    }
-    logger.debug(
-      `[storefront-revalidate] ${event.name} → revalidated [${tags.join(", ")}]`
-    )
-  } catch (err: any) {
-    // Don't break the originating workflow if the storefront is unreachable.
-    logger.warn(
-      `[storefront-revalidate] ${event.name} fetch failed: ${err?.message ?? err}`
-    )
-  }
+  await revalidateStorefront(container, tags, event.name)
 }
 
 export const config: SubscriberConfig = {
