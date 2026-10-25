@@ -13,17 +13,22 @@ type NotificationHandler = {
   event: string
   channel: "email" | "sms"
   subject?: string
+  /** Overrides `subject` when the line depends on the entity. */
+  getSubject?: (data: any) => string
   template: string
   // Entity type and fields to fetch when event payload only contains IDs
   entity?: string
   fields?: string[]
-  getTo: (data: any) => string | undefined
+  /** One address, or several — each gets its own notification. */
+  getTo: (data: any) => string | string[] | undefined
   getBody: (data: any) => string
   getSmsBody?: (data: any) => string
   /** Return true to say nothing for this particular entity. Distinct from
    *  getTo returning undefined, which means "no address"; this means "there
    *  is an address and we deliberately are not writing to it". */
   skipWhen?: (data: any) => boolean
+  /** Logged when skipWhen holds. */
+  skipReason?: string
 }
 
 // The Pulse Pay notification provider renders the body as plain text inside
@@ -150,6 +155,79 @@ const renderItemsList = (items: any[] = [], currency?: string): string => {
 //
 // store_id is not usable here either: an online PICKUP order carries the
 // shop's id too, and suppressing on it would mute genuine web orders.
+// ── The shop's order alert ──────────────────────────────────────────────
+//
+// Recipients are comma-separated lists in the environment, e.g.
+//   ORDER_ALERT_EMAIL=ops@example.com,owner@example.com
+//   ORDER_ALERT_PHONE=+2349030000000,+2347080000000
+const envList = (name: string): string[] =>
+  (process.env[name] || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean)
+
+// Only paid orders are fulfilled, so only paid orders alert the shop. Paid
+// means a real gateway has authorized or captured it: a Pulse session only
+// turns authorized once Pulse confirms the money, while Medusa's manual
+// provider (pp_system_default) authorizes with no money at all.
+const PAID_COLLECTION_STATUSES = new Set([
+  "authorized",
+  "partially_captured",
+  "completed",
+])
+const isPaidOnline = (data: any): boolean =>
+  (data?.payment_collections ?? []).some(
+    (pc: any) =>
+      PAID_COLLECTION_STATUSES.has(pc?.status) &&
+      (pc?.payments ?? []).some(
+        (p: any) =>
+          p?.provider_id && !String(p.provider_id).startsWith("pp_system_default")
+      )
+  )
+
+// "NGN 45,500" rather than "₦45,500": ₦ (and — and •) are outside the GSM
+// 7-bit alphabet, and one such character switches the whole SMS to UCS-2 —
+// 70 characters a part instead of 160, so a one-line alert bills as two or
+// three messages per recipient. The email uses the same form to match.
+const formatNgnPlain = (amount: unknown): string =>
+  `NGN ${Math.round(toNumber(amount)).toLocaleString("en-NG")}`
+
+const isPickupOrder = (data: any): boolean => {
+  const mode = data?.metadata?.ceedmart?.fulfillment
+  if (mode) return mode === "pickup"
+  const method = (data?.shipping_methods ?? [])[0]?.name ?? ""
+  return /pickup/i.test(method)
+}
+
+// wa.me wants the international number with no "+" or leading zero.
+const whatsAppUrl = (phone?: string): string | undefined => {
+  if (!phone) return undefined
+  let digits = phone.replace(/\D/g, "")
+  if (digits.startsWith("0")) digits = "234" + digits.slice(1)
+  return digits.length >= 10 ? `https://wa.me/${digits}` : undefined
+}
+
+const placedAtLagos = (createdAt?: string | Date): string | undefined => {
+  if (!createdAt) return undefined
+  const d = new Date(createdAt)
+  if (Number.isNaN(d.getTime())) return undefined
+  return d.toLocaleString("en-GB", {
+    timeZone: "Africa/Lagos",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })
+}
+
+const itemCount = (items: any[] = []): number =>
+  items.reduce(
+    (n: number, it: any) => n + (toNumber(it.detail?.quantity ?? 1) || 1),
+    0
+  )
+
 const isTillSale = (data: any): boolean =>
   (data?.metadata?.ceedmart?.channel ?? null) === "in-store"
 
@@ -304,23 +382,23 @@ const handlers: NotificationHandler[] = [
 
   // ── Order Placed: the shop's own copy ──
   //
-  // Placing an order is the one event someone has to ACT on, and until now
-  // nothing told them it had happened — the customer got an email and an
-  // SMS, the shop got silence and a dashboard nobody is watching at 6am.
+  // Placing an order is the one event someone has to ACT on. Only paid
+  // online orders alert the shop: till sales are rung up in front of a
+  // cashier, and unpaid orders are not fulfilled.
   //
-  // Recipients come from the environment, and an unset value means silent
-  // rather than broken — the same contract LOW_STOCK_ALERT_EMAIL and
-  // STOCK_TRANSFER_ALERT_EMAIL already use.
+  // Recipients come from the environment (comma-separated), and an unset
+  // value means silent rather than broken — the same contract
+  // LOW_STOCK_ALERT_EMAIL and STOCK_TRANSFER_ALERT_EMAIL already use.
   {
     event: "order.placed",
     channel: "email",
-    subject: "New Ceedmart order",
     template: "order-placed-admin",
     entity: "order",
     fields: [
       "id",
       "email",
       "display_id",
+      "created_at",
       "currency_code",
       "summary.*",
       "shipping_address.*",
@@ -334,46 +412,83 @@ const handlers: NotificationHandler[] = [
       "billing_address.phone",
       "customer.email",
       "customer.phone",
+      "payment_collections.status",
+      "payment_collections.payments.provider_id",
       "metadata",
     ],
-    getTo: () => (process.env.ORDER_ALERT_EMAIL || "").trim() || undefined,
-    skipWhen: isTillSale,
+    getTo: () => envList("ORDER_ALERT_EMAIL"),
+    skipWhen: (data) => isTillSale(data) || !isPaidOnline(data),
+    skipReason: "till sale or not paid",
+    getSubject: (data) => {
+      const ref = data.display_id ? `#${data.display_id}` : data.id
+      const addr = data.shipping_address ?? {}
+      const how = isPickupOrder(data)
+        ? "Pickup"
+        : `Delivery${addr.city ? `, ${addr.city}` : ""}`
+      return `New order ${ref} · ${formatNgnPlain(orderTotal(data))} · ${how}`
+    },
     getBody: (data) => {
-      const orderRef = data.display_id ? `#${data.display_id}` : data.id
+      const ref = data.display_id ? `#${data.display_id}` : data.id
       const addr = data.shipping_address ?? {}
       const name = [addr.first_name, addr.last_name].filter(Boolean).join(" ")
+      const phone = customerPhone(data)
       const items = data.items ?? []
-      const method = (data.shipping_methods ?? [])[0]?.name
+      const placed = placedAtLagos(data.created_at)
 
       // Everything needed to start picking, in the body. An operator
       // reading this on a phone should not have to open the admin to know
       // what was bought and where it is going.
-      const lines: string[] = [
-        `New order ${orderRef}.`,
-        ``,
-        `Customer: ${name || "(no name)"}`,
-        `Email:    ${customerEmail(data) || "(none)"}`,
-        `Phone:    ${customerPhone(data) || "(none)"}`,
-      ]
-
-      if (method) lines.push(`Fulfilment: ${method}`)
-
-      const where = [addr.address_1, addr.city, addr.province]
-        .filter(Boolean)
-        .join(", ")
-      if (where) lines.push(`Deliver to: ${where}`)
-
-      const itemsBlock = renderItemsList(items, data.currency_code)
-      if (itemsBlock) lines.push(``, `Items:`, itemsBlock)
+      const lines: string[] = [`NEW ONLINE ORDER ${ref}`]
+      if (placed) lines.push(`Placed ${placed}`)
 
       lines.push(
         ``,
-        `Total: ${formatMoney(orderTotal(data), data.currency_code)}`,
+        `CUSTOMER`,
+        `  ${name || "(no name)"}`,
+        `  Phone: ${phone || "(none)"}`,
+        `  Email: ${customerEmail(data) || "(none)"}`,
         ``,
-        `Open in admin: ${adminOrderUrl(data.id)}`,
-        ``,
-        `— Ceedmart`
+        `FULFILMENT`
       )
+      if (isPickupOrder(data)) {
+        const method = (data.shipping_methods ?? [])[0]?.name
+        lines.push(`  Pickup${method ? `: ${method}` : ""}`)
+      } else {
+        const where = [addr.address_1, addr.address_2, addr.city, addr.province]
+          .filter(Boolean)
+          .join(", ")
+        lines.push(
+          `  Deliver to: ${where || "(no address)"}`,
+          // Checkout never charges delivery — the fee is agreed afterwards.
+          `  Delivery fee: to be agreed with the customer`
+        )
+      }
+
+      lines.push(``, `PAYMENT`, `  PAID online`, ``, `ITEMS`)
+      for (const it of items) {
+        const qty = toNumber(it.detail?.quantity ?? it.quantity ?? 1) || 1
+        const unit = toNumber(it.unit_price)
+        const title = it.product_title || it.title || "Item"
+        const variant =
+          it.variant_title && it.variant_title !== it.product_title
+            ? ` (${it.variant_title})`
+            : ""
+        lines.push(
+          `  ${qty} x ${title}${variant}: ${formatNgnPlain(unit)} each = ${formatNgnPlain(qty * unit)}`
+        )
+      }
+
+      const subtotal = itemsSubtotal(items)
+      const total = orderTotal(data)
+      lines.push(``, `  Subtotal: ${formatNgnPlain(subtotal)}`)
+      if (subtotal > total) {
+        lines.push(`  Discount: -${formatNgnPlain(subtotal - total)}`)
+      }
+      lines.push(`  TOTAL: ${formatNgnPlain(total)}`, ``, `NEXT STEPS`)
+      lines.push(`  Open in admin: ${adminOrderUrl(data.id)}`)
+      const wa = whatsAppUrl(phone)
+      if (wa) lines.push(`  WhatsApp the customer: ${wa}`)
+      lines.push(``, `Ceedmart order alerts`)
       return lines.join("\n")
     },
   },
@@ -390,28 +505,32 @@ const handlers: NotificationHandler[] = [
       "shipping_address.first_name",
       "shipping_address.last_name",
       "shipping_address.city",
+      "*shipping_methods",
       "*items",
       "items.detail.quantity",
+      "payment_collections.status",
+      "payment_collections.payments.provider_id",
       "metadata",
     ],
-    getTo: () => (process.env.ORDER_ALERT_PHONE || "").trim() || undefined,
-    skipWhen: isTillSale,
+    getTo: () => envList("ORDER_ALERT_PHONE"),
+    skipWhen: (data) => isTillSale(data) || !isPaidOnline(data),
+    skipReason: "till sale or not paid",
     getBody: () => "",
-    // One line, because it is a nudge to go and look — the email carries
-    // the detail. Item COUNT rather than a list: an SMS that runs to three
-    // messages costs three times as much and is read no more carefully.
+    // One GSM-7 message: a nudge to go and look — the email carries the
+    // detail. No customer phone number: it would sit on staff phones.
     getSmsBody: (data) => {
-      const orderRef = data.display_id ? `#${data.display_id}` : ""
-      const count = (data.items ?? []).reduce(
-        (n: number, it: any) => n + (Number(it.detail?.quantity ?? 1) || 1),
-        0
-      )
+      const ref = data.display_id ? `#${data.display_id}` : ""
+      const n = itemCount(data.items ?? [])
       const addr = data.shipping_address ?? {}
       const who = [addr.first_name, addr.last_name].filter(Boolean).join(" ")
-      const total = formatMoney(orderTotal(data), data.currency_code)
-      return `Ceedmart: new order ${orderRef} — ${count} item(s), ${total}${
-        who ? `, ${who}` : ""
-      }${addr.city ? ` (${addr.city})` : ""}.`
+      const how = isPickupOrder(data)
+        ? "Pickup"
+        : `Delivery${addr.city ? ` to ${addr.city}` : ""}`
+      return (
+        `Ceedmart NEW ORDER ${ref}: ${n} item${n === 1 ? "" : "s"}, ` +
+        `${formatNgnPlain(orderTotal(data))}, PAID. ${how}.` +
+        `${who ? ` ${who}.` : ""} Full details sent to email.`
+      )
     },
   },
 
@@ -689,7 +808,10 @@ export default async function ceedmartNotifications({
 
   for (const handler of eventHandlers) {
     try {
-      const cacheKey = handler.entity || "__raw__"
+      // Keyed on the field list too: handlers on the same event ask for
+      // different fields, and sharing the first handler's fetch left the
+      // others reading fields that were never loaded.
+      const cacheKey = `${handler.entity || "__raw__"}:${(handler.fields ?? []).join(",")}`
       let entities: any[]
 
       if (entityCache.has(cacheKey)) {
@@ -702,49 +824,59 @@ export default async function ceedmartNotifications({
       for (const entity of entities) {
         if (handler.skipWhen?.(entity)) {
           logger.info(
-            `[Ceedmart] Skipping ${event.name} (${handler.channel}) for ${entity?.id ?? "?"} — not an online order`
+            `[Ceedmart] Skipping ${event.name} (${handler.channel}) for ${entity?.id ?? "?"} — ${handler.skipReason ?? "not an online order"}`
           )
           continue
         }
 
-        const to = handler.getTo(entity)
-        if (!to) {
+        const raw = handler.getTo(entity)
+        const recipients = (Array.isArray(raw) ? raw : [raw]).filter(
+          (r): r is string => !!r
+        )
+        if (!recipients.length) {
           logger.warn(
             `[Ceedmart] No recipient for ${event.name} (${handler.channel}), skipping`
           )
           continue
         }
 
-        const notificationData: any = {
-          template: handler.template,
-          channel: handler.channel,
-          to,
-          trigger_type: handler.event,
-          resource_id: entity?.id || "",
-        }
-
+        const content: any = {}
         if (handler.channel === "email") {
           // Pulse Pay treats the body as plain text inside its own template;
           // sending under `text` (with `html` mirroring it) keeps SDK type
           // happy and works whichever field the provider reads.
           const body = handler.getBody(entity)
-          notificationData.content = {
-            subject: handler.subject || handler.template,
-            text: body,
-            html: body,
-          }
+          content.subject =
+            handler.getSubject?.(entity) || handler.subject || handler.template
+          content.text = body
+          content.html = body
         } else if (handler.channel === "sms") {
-          notificationData.content = {
-            text: handler.getSmsBody
-              ? handler.getSmsBody(entity)
-              : handler.getBody(entity),
-          }
+          content.text = handler.getSmsBody
+            ? handler.getSmsBody(entity)
+            : handler.getBody(entity)
         }
 
-        await notificationService.createNotifications(notificationData)
-        logger.info(
-          `[Ceedmart] Sent ${handler.channel} notification for ${event.name} to ${to}`
-        )
+        // One notification per recipient, each on its own: a bad number
+        // must not stop the next one from hearing about the order.
+        for (const to of recipients) {
+          try {
+            await notificationService.createNotifications({
+              template: handler.template,
+              channel: handler.channel,
+              to,
+              trigger_type: handler.event,
+              resource_id: entity?.id || "",
+              content,
+            } as any)
+            logger.info(
+              `[Ceedmart] Sent ${handler.channel} notification for ${event.name} to ${to}`
+            )
+          } catch (err: any) {
+            logger.error(
+              `[Ceedmart] Failed to send ${handler.channel} for ${event.name} to ${to}: ${err.message}`
+            )
+          }
+        }
       }
     } catch (err: any) {
       logger.error(
