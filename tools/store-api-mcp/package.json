@@ -1,0 +1,23 @@
+{
+  "name": "ceedmart-store-api-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server that documents the Ceedmart store API and lets an AI assistant call the staging store API, for building the Ceedmart mobile app.",
+  "type": "module",
+  "bin": {
+    "ceedmart-store-api-mcp": "src/server.js"
+  },
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "start:http": "node src/http.js",
+    "test": "node --test src/"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}

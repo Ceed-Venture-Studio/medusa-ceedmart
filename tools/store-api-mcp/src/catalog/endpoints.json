@@ -1,0 +1,1506 @@
+[
+  {
+    "id": "auth-login",
+    "group": "auth",
+    "method": "POST",
+    "path": "/auth/customer/emailpass",
+    "summary": "Log a customer in with email and password and get a JWT.",
+    "auth": "none",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "email", "type": "string", "required": true, "description": "Customer email (the emailpass identifier)." },
+      { "name": "password", "type": "string", "required": true, "description": "Password." }
+    ],
+    "response": "{ token: string } on success (JWT; send as Authorization: Bearer <token> on /store routes). 401 'Invalid email or password' on failure.",
+    "ceedmart_notes": [
+      "/auth/* is outside /store, so no x-publishable-api-key is needed here; every /store/* call does need it.",
+      "Stock Medusa handler; the same route is generic /auth/{actor_type}/{auth_provider}. A token obtained right after /register has no actor_id until POST /store/customers has been called; log in again (or call /auth/token/refresh) after creating the customer."
+    ],
+    "source": "packages/medusa/src/api/auth/[actor_type]/[auth_provider]/route.ts"
+  },
+  {
+    "id": "auth-register",
+    "group": "auth",
+    "method": "POST",
+    "path": "/auth/customer/emailpass/register",
+    "summary": "Create an emailpass auth identity and get a registration token (step 1 of sign-up).",
+    "auth": "none",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "email", "type": "string", "required": true, "description": "Email for the new identity." },
+      { "name": "password", "type": "string", "required": true, "description": "Password for the new identity." }
+    ],
+    "response": "{ token: string } - a registration JWT with no actor_id. Use it as Bearer on POST /store/customers.",
+    "ceedmart_notes": [
+      "Sign-up is two calls: this, then POST /store/customers with this token AND the same password in the body (Ceedmart forwards the password to Pulse Identity, see customer-create)."
+    ],
+    "source": "packages/medusa/src/api/auth/[actor_type]/[auth_provider]/register/route.ts"
+  },
+  {
+    "id": "auth-token-refresh",
+    "group": "auth",
+    "method": "POST",
+    "path": "/auth/token/refresh",
+    "summary": "Exchange a valid bearer token for a fresh one (includes actor_id if the customer now exists).",
+    "auth": "none",
+    "path_params": [],
+    "query": [],
+    "body": [],
+    "response": "{ token: string }",
+    "ceedmart_notes": [
+      "Requires Authorization: Bearer <current token> (registration tokens are accepted: allowUnregistered). Useful right after POST /store/customers to get a token carrying the new customer id."
+    ],
+    "source": "packages/medusa/src/api/auth/token/refresh/route.ts"
+  },
+  {
+    "id": "auth-reset-password-request",
+    "group": "auth",
+    "method": "POST",
+    "path": "/auth/customer/emailpass/reset-password",
+    "summary": "Request a password-reset email.",
+    "auth": "none",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "identifier", "type": "string", "required": true, "description": "The customer's email." },
+      { "name": "metadata", "type": "object", "required": false, "description": "Optional metadata passed to the reset-token workflow." }
+    ],
+    "response": "201 with empty body, always (even for unknown emails, to avoid leaking accounts).",
+    "ceedmart_notes": [
+      "Ceedmart's auth.password_reset subscriber emails a link to the WEB storefront: {STOREFRONT_URL}/ng/account/reset-password?token=<token>. There is no app deep link; a mobile app must either handle that web URL (universal/app link) or let the website finish the reset."
+    ],
+    "source": "packages/medusa/src/api/auth/[actor_type]/[auth_provider]/reset-password/route.ts"
+  },
+  {
+    "id": "auth-reset-password-update",
+    "group": "auth",
+    "method": "POST",
+    "path": "/auth/customer/emailpass/update",
+    "summary": "Set a new password using the reset token from the email.",
+    "auth": "none",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "password", "type": "string", "required": true, "description": "The new password." }
+    ],
+    "response": "{ success: true }; 401 'Invalid token' if the reset token is bad/expired.",
+    "ceedmart_notes": [
+      "The reset token goes in the Authorization header as 'Bearer <reset token>' (validateToken reads req.headers.authorization), not in the body.",
+      "Not verified: whether the new password is also pushed to Pulse Identity. Nothing in the code read syncs it; the Pulse identity was created with the sign-up password."
+    ],
+    "source": "packages/medusa/src/api/auth/[actor_type]/[auth_provider]/update/route.ts"
+  },
+  {
+    "id": "customer-create",
+    "group": "customer",
+    "method": "POST",
+    "path": "/store/customers",
+    "summary": "Create the customer record for a registration token (step 2 of sign-up).",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "Field selection for the returned customer." }
+    ],
+    "body": [
+      { "name": "email", "type": "string(email)", "required": true, "description": "Email; should match the registered identity." },
+      { "name": "first_name", "type": "string", "required": true, "description": "Required (min 1) - Ceedmart override; nullable in stock Medusa." },
+      { "name": "last_name", "type": "string", "required": true, "description": "Required (min 1) - Ceedmart override." },
+      { "name": "phone", "type": "string", "required": true, "description": "Required (min 1) - Ceedmart override; sent to Pulse Identity." },
+      { "name": "password", "type": "string", "required": true, "description": "Required - Ceedmart override. Same password used at /register; forwarded to Pulse Identity, not stored on the customer." },
+      { "name": "company_name", "type": "string|null", "required": false, "description": "Optional." },
+      { "name": "metadata", "type": "object|null", "required": false, "description": "Optional." }
+    ],
+    "response": "{ customer } (id, email, first_name, last_name, phone, has_account, addresses, ...).",
+    "ceedmart_notes": [
+      "Must be sent with Authorization: Bearer <registration token> from /auth/customer/emailpass/register (authenticate allowUnregistered). Fails with 'Request already authenticated as a customer.' if the token already has an actor.",
+      "The phone/password/first_name/last_name requirements are in the forked core validator packages/medusa/src/api/store/customers/validators.ts (StoreCreateCustomer), not in app/ceedmart middleware.",
+      "createCustomerAccountWorkflow (forked in packages/core/core-flows/src/customer/workflows/create-customer-account.ts) registers the customer with Pulse Identity using firstName/lastName/email/password/phone and saves the returned pim_id. If Pulse registration fails the customer is STILL created, silently, without pim_id; that customer then gets payment-options reason 'no_pulse_identity' and Pulse payment sessions fail.",
+      "After this call, get a token with actor_id: log in again via /auth/customer/emailpass or call /auth/token/refresh."
+    ],
+    "source": "packages/medusa/src/api/store/customers/route.ts"
+  },
+  {
+    "id": "customer-me-get",
+    "group": "customer",
+    "method": "GET",
+    "path": "/store/customers/me",
+    "summary": "Get the signed-in customer.",
+    "auth": "publishable_key+customer",
+    "path_params": [],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "Field selection, e.g. '*addresses'." }
+    ],
+    "body": [],
+    "response": "{ customer }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/customers/me/route.ts"
+  },
+  {
+    "id": "customer-me-update",
+    "group": "customer",
+    "method": "POST",
+    "path": "/store/customers/me",
+    "summary": "Update the signed-in customer's profile.",
+    "auth": "publishable_key+customer",
+    "path_params": [],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "Field selection for the returned customer." }
+    ],
+    "body": [
+      { "name": "first_name", "type": "string|null", "required": false, "description": "" },
+      { "name": "last_name", "type": "string|null", "required": false, "description": "" },
+      { "name": "phone", "type": "string|null", "required": false, "description": "" },
+      { "name": "company_name", "type": "string|null", "required": false, "description": "" },
+      { "name": "metadata", "type": "object|null", "required": false, "description": "" }
+    ],
+    "response": "{ customer }",
+    "ceedmart_notes": [
+      "Email cannot be changed here. Changing phone here does not update Pulse Identity (nothing in the code read does)."
+    ],
+    "source": "packages/medusa/src/api/store/customers/me/route.ts"
+  },
+  {
+    "id": "customer-addresses-list",
+    "group": "customer",
+    "method": "GET",
+    "path": "/store/customers/me/addresses",
+    "summary": "List the signed-in customer's saved addresses.",
+    "auth": "publishable_key+customer",
+    "path_params": [],
+    "query": [
+      { "name": "q", "type": "string", "required": false, "description": "Search." },
+      { "name": "city", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "country_code", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "postal_code", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 50." },
+      { "name": "offset", "type": "number", "required": false, "description": "Default 0." },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ addresses[], count, offset, limit }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/customers/me/addresses/route.ts"
+  },
+  {
+    "id": "customer-address-create",
+    "group": "customer",
+    "method": "POST",
+    "path": "/store/customers/me/addresses",
+    "summary": "Add an address to the signed-in customer's address book.",
+    "auth": "publishable_key+customer",
+    "path_params": [],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "Field selection for the returned customer." }
+    ],
+    "body": [
+      { "name": "first_name", "type": "string|null", "required": false, "description": "" },
+      { "name": "last_name", "type": "string|null", "required": false, "description": "" },
+      { "name": "phone", "type": "string|null", "required": false, "description": "" },
+      { "name": "company", "type": "string|null", "required": false, "description": "" },
+      { "name": "address_1", "type": "string|null", "required": false, "description": "" },
+      { "name": "address_2", "type": "string|null", "required": false, "description": "" },
+      { "name": "city", "type": "string|null", "required": false, "description": "" },
+      { "name": "country_code", "type": "string|null", "required": false, "description": "e.g. 'ng'." },
+      { "name": "province", "type": "string|null", "required": false, "description": "Free text in the address; not the same thing as cart metadata.ceedmart.province." },
+      { "name": "postal_code", "type": "string|null", "required": false, "description": "" },
+      { "name": "address_name", "type": "string|null", "required": false, "description": "" },
+      { "name": "is_default_shipping", "type": "boolean", "required": false, "description": "" },
+      { "name": "is_default_billing", "type": "boolean", "required": false, "description": "" },
+      { "name": "metadata", "type": "object|null", "required": false, "description": "" }
+    ],
+    "response": "{ customer } (the whole customer with addresses, not just the new address).",
+    "ceedmart_notes": [
+      "Body is strict: unknown keys are rejected."
+    ],
+    "source": "packages/medusa/src/api/store/customers/me/addresses/route.ts"
+  },
+  {
+    "id": "customer-address-get",
+    "group": "customer",
+    "method": "GET",
+    "path": "/store/customers/me/addresses/{address_id}",
+    "summary": "Get one saved address.",
+    "auth": "publishable_key+customer",
+    "path_params": [
+      { "name": "address_id", "type": "string", "description": "Address id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ address }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/customers/me/addresses/[address_id]/route.ts"
+  },
+  {
+    "id": "customer-address-update",
+    "group": "customer",
+    "method": "POST",
+    "path": "/store/customers/me/addresses/{address_id}",
+    "summary": "Update a saved address.",
+    "auth": "publishable_key+customer",
+    "path_params": [
+      { "name": "address_id", "type": "string", "description": "Address id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "(same fields as customer-address-create)", "type": "object", "required": false, "description": "first_name, last_name, phone, company, address_1, address_2, city, country_code, province, postal_code, address_name, is_default_shipping, is_default_billing, metadata." }
+    ],
+    "response": "{ customer }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/customers/me/addresses/[address_id]/route.ts"
+  },
+  {
+    "id": "customer-address-delete",
+    "group": "customer",
+    "method": "DELETE",
+    "path": "/store/customers/me/addresses/{address_id}",
+    "summary": "Delete a saved address.",
+    "auth": "publishable_key+customer",
+    "path_params": [
+      { "name": "address_id", "type": "string", "description": "Address id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "{ id, object: 'address', deleted: true, parent: customer }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/customers/me/addresses/[address_id]/route.ts"
+  },
+  {
+    "id": "regions-list",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/regions",
+    "summary": "List regions (needed for region_id on carts and for product prices).",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "q", "type": "string", "required": false, "description": "" },
+      { "name": "id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "currency_code", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "name", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 50." },
+      { "name": "offset", "type": "number", "required": false, "description": "" },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ regions[] (id, name, currency_code, countries[]), count, offset, limit }",
+    "ceedmart_notes": [
+      "The website picks the region whose countries include 'ng' (its URLs are /ng/...). Region currency was not verified in code; read it from the response."
+    ],
+    "source": "packages/medusa/src/api/store/regions/route.ts"
+  },
+  {
+    "id": "regions-get",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/regions/{id}",
+    "summary": "Get one region.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Region id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ region }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/regions/[id]/route.ts"
+  },
+  {
+    "id": "products-list",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/products",
+    "summary": "List/search published products, priced and availability-flagged for a location.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [
+      { "name": "sales_channel_id", "type": "string|string[]", "required": false, "description": "Strongly recommended: the chosen location's sales_channel_id from GET /store/web-locations, else default_sales_channel_id. Must belong to the publishable key or the request is rejected." },
+      { "name": "province", "type": "string", "required": false, "description": "Location state as ISO 3166-2 code (e.g. 'ng-la'); state names are also normalised. Overrides the province derived from sales_channel_id. Also used by Medusa for the tax context." },
+      { "name": "region_id", "type": "string", "required": false, "description": "Needed for calculated_price on variants." },
+      { "name": "country_code", "type": "string", "required": false, "description": "Alternative pricing/tax context." },
+      { "name": "cart_id", "type": "string", "required": false, "description": "Pricing/tax context from a cart." },
+      { "name": "q", "type": "string", "required": false, "description": "Search text (searches are logged by Ceedmart)." },
+      { "name": "id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "handle", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "title", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "category_id", "type": "string|string[]", "required": false, "description": "Only active, non-internal categories." },
+      { "name": "collection_id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "tag_id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "type_id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "is_giftcard", "type": "boolean", "required": false, "description": "" },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 50." },
+      { "name": "offset", "type": "number", "required": false, "description": "" },
+      { "name": "order", "type": "string", "required": false, "description": "e.g. 'created_at' or '-created_at'." },
+      { "name": "fields", "type": "string", "required": false, "description": "e.g. '*variants.calculated_price,+variants.inventory_quantity'." }
+    ],
+    "body": [],
+    "response": "{ products[], count, offset, limit }. When a location is resolved, each product also has location: { province, name } and available_here: boolean (true if any variant is), and each variants[] entry has available_here: boolean.",
+    "ceedmart_notes": [
+      "The website's publishable key covers several sales channels (store default + one 'Web - <city>' channel per location). Without sales_channel_id the list is the union of all of them, and stock levels need exactly one channel, so always pass one.",
+      "Location resolution (lib/location-catalog/http.ts storeLocationCatalog): province query wins, else the province of a web location channel passed as sales_channel_id (port-harcourt->ng-ri, uyo->ng-ak, lagos->ng-la). The default channel has no province, so no location fields are added and prices are national.",
+      "With a province, the pricing context gets province and province-specific prices win; available_here comes from the location-catalog module (variant rule, else product rule; absent = available).",
+      "Two separate mechanisms hide/flag products per location: (1) a product not linked to a location's web channel is simply absent from that channel's listing; (2) location-catalog availability marks it available_here=false but still lists it. Show available_here=false items as unavailable rather than hiding them.",
+      "Optional headers x-cart-id or x-session-id are recorded with search logs when q is present.",
+      "Commerce type (auction/preorder/etc.) is NOT in the product payload; use GET /store/listing-policies."
+    ],
+    "source": "packages/medusa/src/api/store/products/route.ts"
+  },
+  {
+    "id": "products-get",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/products/{id}",
+    "summary": "Get one published product, priced and availability-flagged for a location.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Product id (look up by handle via products-list ?handle=)." }
+    ],
+    "query": [
+      { "name": "sales_channel_id", "type": "string|string[]", "required": false, "description": "Chosen location's sales_channel_id from GET /store/web-locations." },
+      { "name": "province", "type": "string", "required": false, "description": "ISO 3166-2 code, e.g. 'ng-la'." },
+      { "name": "region_id", "type": "string", "required": false, "description": "Needed for calculated_price." },
+      { "name": "country_code", "type": "string", "required": false, "description": "" },
+      { "name": "cart_id", "type": "string", "required": false, "description": "" },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ product } with location { province, name }, available_here and variants[].available_here when a location is resolved.",
+    "ceedmart_notes": [
+      "Same location logic as products-list (storeLocationCatalog middleware). Returns 404 if the product is not in the given sales channel."
+    ],
+    "source": "packages/medusa/src/api/store/products/[id]/route.ts"
+  },
+  {
+    "id": "product-categories-list",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/product-categories",
+    "summary": "List product categories.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "q", "type": "string", "required": false, "description": "" },
+      { "name": "id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "name", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "handle", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "parent_category_id", "type": "string|string[]", "required": false, "description": "Use 'null' for top-level." },
+      { "name": "include_ancestors_tree", "type": "boolean", "required": false, "description": "" },
+      { "name": "include_descendants_tree", "type": "boolean", "required": false, "description": "" },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 50." },
+      { "name": "offset", "type": "number", "required": false, "description": "" },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ product_categories[], count, offset, limit }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/product-categories/route.ts"
+  },
+  {
+    "id": "product-categories-get",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/product-categories/{id}",
+    "summary": "Get one product category.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Category id." }
+    ],
+    "query": [
+      { "name": "include_ancestors_tree", "type": "boolean", "required": false, "description": "" },
+      { "name": "include_descendants_tree", "type": "boolean", "required": false, "description": "" },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ product_category }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/product-categories/[id]/route.ts"
+  },
+  {
+    "id": "collections-list",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/collections",
+    "summary": "List product collections.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "q", "type": "string", "required": false, "description": "" },
+      { "name": "id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "title", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "handle", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 10 (not 50)." },
+      { "name": "offset", "type": "number", "required": false, "description": "" },
+      { "name": "order", "type": "string", "required": false, "description": "Default '-created_at'." },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ collections[], count, offset, limit }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/collections/route.ts"
+  },
+  {
+    "id": "collections-get",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/collections/{id}",
+    "summary": "Get one collection.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Collection id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ collection }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/collections/[id]/route.ts"
+  },
+  {
+    "id": "listing-policies-get",
+    "group": "catalog",
+    "method": "GET",
+    "path": "/store/listing-policies",
+    "summary": "Batch lookup of commerce type (preorder/auction/custom_build) for variants.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "targets", "type": "string", "required": false, "description": "Comma-separated 'variant_id:product_id' pairs, max 100. Empty/missing returns { policies: {} }." }
+    ],
+    "body": [],
+    "response": "{ policies: { [variant_id]: { commerce_type: 'standard'|'preorder'|'custom_build'|'auction', is_active: boolean, label, reference_id, config } } }",
+    "ceedmart_notes": [
+      "Variants that are plain active 'standard' listings are OMITTED; treat absent as standard.",
+      "Product-level policies apply to variants with none of their own, which is why product_id is required in each pair.",
+      ">100 targets returns 400."
+    ],
+    "source": "app/ceedmart/src/api/store/listing-policies/route.ts"
+  },
+  {
+    "id": "web-locations-list",
+    "group": "locations",
+    "method": "GET",
+    "path": "/store/web-locations",
+    "summary": "Map location-picker entries to sales channels and states; get the cart's default channel.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [],
+    "body": [],
+    "response": "{ default_sales_channel_id: string|null, locations: [{ id: 'port-harcourt'|'uyo'|'lagos', sales_channel_id, province: 'ng-ri'|'ng-ak'|'ng-la'|null }] }",
+    "ceedmart_notes": [
+      "Only channels on the calling publishable key that are enabled and carry metadata.ceedmart_web.location are listed. No display name is returned; names are fixed in code: port-harcourt='Port Harcourt', uyo='Uyo', lagos='Lagos'.",
+      "default_sales_channel_id is the store default channel if the key includes it, else the key's first channel.",
+      "Use locations[].sales_channel_id for catalogue reads (/store/products), default_sales_channel_id for POST /store/carts, and locations[].province for cart metadata.ceedmart.province."
+    ],
+    "source": "app/ceedmart/src/api/store/web-locations/route.ts"
+  },
+  {
+    "id": "shops-list",
+    "group": "locations",
+    "method": "GET",
+    "path": "/store/shops",
+    "summary": "List physical Ceedmart shops (POS sales channels) for a pickup picker.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [],
+    "body": [],
+    "response": "{ shops: [{ id (sales channel id), name, code, city, address, phone }] } sorted by name.",
+    "ceedmart_notes": [
+      "Lists enabled sales channels whose metadata.ceedmart.code is set, regardless of publishable key.",
+      "Per a storefront comment (checkout fulfillment-mode), no production channel carried ceedmart.code at the time it was written, so this may return []. Pickup availability is decided by shipping options whose service_zone.fulfillment_set.type === 'pickup', not by this list.",
+      "If the shopper picks a shop, its id goes into cart metadata.ceedmart.store_id."
+    ],
+    "source": "app/ceedmart/src/api/store/shops/route.ts"
+  },
+  {
+    "id": "cart-create",
+    "group": "cart",
+    "method": "POST",
+    "path": "/store/carts",
+    "summary": "Create a cart.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "Field selection for the returned cart." }
+    ],
+    "body": [
+      { "name": "sales_channel_id", "type": "string", "required": true, "description": "Use default_sales_channel_id from GET /store/web-locations. NOT a location channel." },
+      { "name": "region_id", "type": "string", "required": false, "description": "Region id (the 'ng' region)." },
+      { "name": "metadata", "type": "object", "required": false, "description": "Set { ceedmart: { province: '<ng-xx>' } } when a location is chosen." },
+      { "name": "email", "type": "string(email)", "required": false, "description": "" },
+      { "name": "currency_code", "type": "string", "required": false, "description": "" },
+      { "name": "items", "type": "[{ variant_id, quantity>0, metadata? }]", "required": false, "description": "Initial items." },
+      { "name": "shipping_address", "type": "Address|string", "required": false, "description": "" },
+      { "name": "billing_address", "type": "Address|string", "required": false, "description": "" },
+      { "name": "promo_codes", "type": "string[]", "required": false, "description": "" },
+      { "name": "locale", "type": "string", "required": false, "description": "" },
+      { "name": "additional_data", "type": "object", "required": false, "description": "Passed to workflow hooks." }
+    ],
+    "response": "{ cart } plus Ceedmart annotations: cart.location { province, name } and items[].available_here when the cart has a province.",
+    "ceedmart_notes": [
+      "sales_channel_id is effectively required: the publishable key has several channels, and ensurePublishableKeyAndSalesChannelMatch rejects a create without one ('...multiple associated sales channels. Please provide a sales channel ID...'). It must be one of the key's channels.",
+      "Carts always live on the default channel, whatever city is chosen (shipping options, stock reservations and pickup are configured there). The location travels as metadata.ceedmart.province.",
+      "If a bearer token is sent, the cart is created for that customer (customer_id from the token).",
+      "Pricing: createCart's pricing hook only sees the channel (default = national); if items are passed with a metadata province that differs, the cartCreated hook re-prices via refreshCartItems. Variants unavailable in that province make the create fail with 400 not_allowed.",
+      "Body is strict: unknown keys are rejected."
+    ],
+    "source": "packages/medusa/src/api/store/carts/route.ts"
+  },
+  {
+    "id": "cart-get",
+    "group": "cart",
+    "method": "GET",
+    "path": "/store/carts/{id}",
+    "summary": "Retrieve a cart.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "e.g. '*items,*region,*items.variant,*promotions,+shipping_methods.name' or 'id,*payment_collection,*payment_collection.payment_sessions'." }
+    ],
+    "body": [],
+    "response": "{ cart } with cart.location { province, name } and items[].available_here when the cart has a province; completed_at is set once the cart has become an order.",
+    "ceedmart_notes": [
+      "Use items[].available_here === false to flag lines that became unavailable after a location switch; complete will refuse them.",
+      "Check completed_at before completing: the Pulse webhook may have placed the order already (storefront does this)."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/route.ts"
+  },
+  {
+    "id": "cart-update",
+    "group": "cart",
+    "method": "POST",
+    "path": "/store/carts/{id}",
+    "summary": "Update cart email, addresses, region, metadata (location, fulfillment), promo codes.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "metadata", "type": "object", "required": false, "description": "Top-level keys merge into existing metadata, but the nested 'ceedmart' object is replaced wholesale: always send the full existing metadata.ceedmart with your changes applied." },
+      { "name": "email", "type": "string(email)", "required": false, "description": "Required before complete (guest checkout)." },
+      { "name": "shipping_address", "type": "Address (+id)|string", "required": false, "description": "first_name, last_name, phone, company, address_1, address_2, city, country_code, province, postal_code, metadata." },
+      { "name": "billing_address", "type": "Address (+id)|string", "required": false, "description": "" },
+      { "name": "region_id", "type": "string", "required": false, "description": "" },
+      { "name": "sales_channel_id", "type": "string|null", "required": false, "description": "Do not change; carts stay on the default channel." },
+      { "name": "promo_codes", "type": "string[]", "required": false, "description": "" },
+      { "name": "locale", "type": "string|null", "required": false, "description": "" },
+      { "name": "additional_data", "type": "object", "required": false, "description": "" }
+    ],
+    "response": "{ cart } with location annotations.",
+    "ceedmart_notes": [
+      "metadata.ceedmart is a shared bag with several writers: province (location), channel/fulfillment/store_id/sourcing (checkout), partner_code (referral attribution), commerce_type and terms_version_id (pre-order terms). Read the cart, spread metadata.ceedmart, patch your keys, send it back. Mirrors mergeCeedmartMetadata in the storefront's src/lib/data/ceedmart-metadata.ts.",
+      "Changing metadata.ceedmart.province re-prices every line for the new state (refreshCartItemsWorkflow pricing hook) but does NOT remove now-unavailable lines; they come back with available_here=false.",
+      "Checkout categorization the website writes (setFulfillmentMode): delivery -> { channel: 'online', fulfillment: 'delivery', sourcing: 'local', store_id removed }; pickup -> { channel: 'online', fulfillment: 'pickup', sourcing: 'local', store_id: <shop sales channel id from /store/shops, or removed if none chosen> }. The app should send channel 'online' (never 'in-store', which is the POS). Medusa copies cart metadata to order.metadata on complete.",
+      "Nothing on the backend enforces these categorization keys; they are used by admin badges, reporting and partner commission.",
+      "Body is strict: unknown keys are rejected."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/route.ts"
+  },
+  {
+    "id": "cart-line-item-add",
+    "group": "cart",
+    "method": "POST",
+    "path": "/store/carts/{id}/line-items",
+    "summary": "Add a variant to the cart.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "variant_id", "type": "string", "required": true, "description": "" },
+      { "name": "quantity", "type": "number", "required": true, "description": "> 0" },
+      { "name": "metadata", "type": "object|null", "required": false, "description": "" }
+    ],
+    "response": "{ cart } with location annotations.",
+    "ceedmart_notes": [
+      "Priced for the cart's province (metadata.ceedmart.province, else the cart channel's province).",
+      "If the variant is unavailable in that province: 400, type not_allowed, message '<product title> - <variant title>: This item is not available in <State>.' (variant title omitted when it is 'Default variant'; the separator is an em dash). Message is 'This item is not available in your location.' if the state has no name.",
+      "Variants must be in the cart's (default) sales channel."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/line-items/route.ts"
+  },
+  {
+    "id": "cart-line-item-update",
+    "group": "cart",
+    "method": "POST",
+    "path": "/store/carts/{id}/line-items/{line_id}",
+    "summary": "Change a line's quantity (0 removes it).",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." },
+      { "name": "line_id", "type": "string", "description": "Line item id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "quantity", "type": "number", "required": true, "description": ">= 0; 0 removes the line." },
+      { "name": "metadata", "type": "object|null", "required": false, "description": "" }
+    ],
+    "response": "{ cart } with location annotations.",
+    "ceedmart_notes": [
+      "Re-priced for the cart's province. Availability is not re-checked here (only on create, add and complete)."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/line-items/[line_id]/route.ts"
+  },
+  {
+    "id": "cart-line-item-delete",
+    "group": "cart",
+    "method": "DELETE",
+    "path": "/store/carts/{id}/line-items/{line_id}",
+    "summary": "Remove a line from the cart.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." },
+      { "name": "line_id", "type": "string", "description": "Line item id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ id, object: 'line-item', deleted: true, parent: cart }",
+    "ceedmart_notes": [
+      "The cart comes back under 'parent', not 'cart', and the Ceedmart middleware only annotates body.cart, so parent has no location/available_here. Re-fetch the cart if you need them."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/line-items/[line_id]/route.ts"
+  },
+  {
+    "id": "cart-promotions-add",
+    "group": "cart",
+    "method": "POST",
+    "path": "/store/carts/{id}/promotions",
+    "summary": "Apply promo codes.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "promo_codes", "type": "string[]", "required": true, "description": "" }
+    ],
+    "response": "{ cart }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/carts/[id]/promotions/route.ts"
+  },
+  {
+    "id": "cart-promotions-remove",
+    "group": "cart",
+    "method": "DELETE",
+    "path": "/store/carts/{id}/promotions",
+    "summary": "Remove promo codes.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "promo_codes", "type": "string[]", "required": true, "description": "Sent as a JSON body on DELETE." }
+    ],
+    "response": "{ cart }",
+    "ceedmart_notes": [],
+    "source": "packages/medusa/src/api/store/carts/[id]/promotions/route.ts"
+  },
+  {
+    "id": "cart-customer-transfer",
+    "group": "cart",
+    "method": "POST",
+    "path": "/store/carts/{id}/customer",
+    "summary": "Attach a guest cart to the signed-in customer.",
+    "auth": "publishable_key+customer",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ cart }",
+    "ceedmart_notes": [
+      "Call after sign-in if the cart was created as a guest: Pulse payment sessions need the signed-in customer (pim_id)."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/customer/route.ts"
+  },
+  {
+    "id": "shipping-options-list",
+    "group": "checkout",
+    "method": "GET",
+    "path": "/store/shipping-options",
+    "summary": "List shipping options available for a cart (delivery and pickup).",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [
+      { "name": "cart_id", "type": "string", "required": true, "description": "" },
+      { "name": "is_return", "type": "boolean", "required": false, "description": "" },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ shipping_options[]: { id, name, price_type, amount, service_zone: { fulfillment_set: { type, location { address } } }, insufficient_inventory, ... } }",
+    "ceedmart_notes": [
+      "Pickup vs delivery is decided by service_zone.fulfillment_set.type === 'pickup' (storefront checkout-form). Pickup option names describe the place, e.g. 'Office Pickup (Ceedmart Eliozu, Port Harcourt)'.",
+      "Options come from the cart's (default) sales channel, so they do not change with the chosen city."
+    ],
+    "source": "packages/medusa/src/api/store/shipping-options/route.ts"
+  },
+  {
+    "id": "cart-shipping-method-add",
+    "group": "checkout",
+    "method": "POST",
+    "path": "/store/carts/{id}/shipping-methods",
+    "summary": "Set the cart's shipping method.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "option_id", "type": "string", "required": true, "description": "Shipping option id from shipping-options-list." },
+      { "name": "data", "type": "object", "required": false, "description": "Provider data." }
+    ],
+    "response": "{ cart }",
+    "ceedmart_notes": [
+      "Website order: write fulfillment metadata (cart-update) and set the matching shipping method together: pickup -> the pickup option; delivery -> the delivery option (auto-picked only when there is exactly one)."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/shipping-methods/route.ts"
+  },
+  {
+    "id": "payment-providers-list",
+    "group": "checkout",
+    "method": "GET",
+    "path": "/store/payment-providers",
+    "summary": "List payment providers enabled on a region.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "region_id", "type": "string", "required": true, "description": "" },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 20." },
+      { "name": "offset", "type": "number", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ payment_providers[]: { id, is_enabled }, count, offset, limit }",
+    "ceedmart_notes": [
+      "Registered provider ids: pp_pulse-pay_pulse-pay plus manual ones pp_cash_manual, pp_card_manual, pp_bank-transfer_manual, pp_online_manual, pp_other_manual (and Medusa's pp_system_default). Which are enabled on the region is database config, not code.",
+      "medusa-config comments call the manual providers POS-only (cashier confirms receipt out of band). The website shows ONLY pp_pulse-pay_pulse-pay; the app should do the same.",
+      "Pulse appears as one row; the actual gateways (Paystack, Monnify, ...) come from GET /store/payment-options."
+    ],
+    "source": "packages/medusa/src/api/store/payment-providers/route.ts"
+  },
+  {
+    "id": "payment-options-list",
+    "group": "checkout",
+    "method": "GET",
+    "path": "/store/payment-options",
+    "summary": "List the Pulse Pay gateways the signed-in customer can pay with.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [],
+    "body": [],
+    "response": "{ options: [{ provider: string, displayName: string, isLive: boolean }], reason: null | 'not_signed_in' | 'no_pulse_identity' | 'none_configured' | 'unavailable' }",
+    "ceedmart_notes": [
+      "Needs a customer bearer token to be useful: a guest always gets { options: [], reason: 'not_signed_in' } (200). Pulse card/transfer payment is account-only by design; prompt sign-in.",
+      "reason 'no_pulse_identity' = customer has no pim_id (Pulse registration failed at sign-up); payment sessions will fail for this customer.",
+      "Pulse unreachable -> HTTP 502 with { options: [], reason: 'unavailable' }. [] with reason 'none_configured' means no gateway configured on Pulse.",
+      "The chosen option's provider value is sent as data.channel when creating the pp_pulse-pay_pulse-pay payment session.",
+      "Response keys are camelCase (displayName, isLive), unlike the rest of the API."
+    ],
+    "source": "app/ceedmart/src/api/store/payment-options/route.ts"
+  },
+  {
+    "id": "payment-collection-create",
+    "group": "checkout",
+    "method": "POST",
+    "path": "/store/payment-collections",
+    "summary": "Create (or fetch existing) payment collection for a cart.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "cart_id", "type": "string", "required": true, "description": "" }
+    ],
+    "response": "{ payment_collection } (id, amount, currency_code, payment_sessions[])",
+    "ceedmart_notes": [
+      "The JS SDK's initiatePaymentSession does this automatically when the cart has no payment_collection."
+    ],
+    "source": "packages/medusa/src/api/store/payment-collections/route.ts"
+  },
+  {
+    "id": "payment-session-create",
+    "group": "checkout",
+    "method": "POST",
+    "path": "/store/payment-collections/{id}/payment-sessions",
+    "summary": "Start a payment session (Pulse Pay returns a hosted checkout_url).",
+    "auth": "publishable_key+customer",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Payment collection id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [
+      { "name": "provider_id", "type": "string", "required": true, "description": "'pp_pulse-pay_pulse-pay' for app checkout." },
+      { "name": "data", "type": "object", "required": false, "description": "For Pulse: { channel?: <payment-options provider, e.g. 'paystack'>, origin?: <https origin for the return URL> }." }
+    ],
+    "response": "{ payment_collection } with payment_sessions[]; the Pulse session (status 'pending') has data { id, session_id, pim_id, pulse_reference, transaction_reference, checkout_url, status, channel, amount, currency }.",
+    "ceedmart_notes": [
+      "Route auth is technically optional, but Pulse needs the signed-in customer: without a customer with pim_id it throws 400 'We couldn't start your card payment. Please sign out and back in, then try again...'.",
+      "DANGER: creating a session DELETES the cart's existing session. Before creating a new one, call GET /store/carts/{id}/payment-status; if paid, do not create another; if reason is 'unknown', reuse the existing session's data.checkout_url instead of replacing it (storefront payment step logic).",
+      "Send data.channel when the tenant has more than one gateway; Pulse refuses to guess.",
+      "Return URLs go to the WEB storefront: {STOREFRONT_URL}/ng/checkout?step=review (success) / ?step=payment (failure), with session_id added. data.origin only swaps the hostname, only if https and same base domain (www or apex); a custom app scheme cannot be used. Open checkout_url in an in-app browser and detect completion by polling payment-status, not by the redirect."
+    ],
+    "source": "packages/medusa/src/api/store/payment-collections/[id]/payment-sessions/route.ts"
+  },
+  {
+    "id": "cart-payment-status",
+    "group": "checkout",
+    "method": "GET",
+    "path": "/store/carts/{id}/payment-status",
+    "summary": "Ask whether the cart's latest payment session has actually been paid (checks Pulse directly).",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "{ paid: boolean, reason: null | 'no_session' | 'not_a_pulse_session' | 'unknown', session_status: string|null, pulse_status?: number }",
+    "ceedmart_notes": [
+      "Looks only at the newest payment session. authorized/captured -> paid: true without calling Pulse. Otherwise asks Pulse; paid is true when Pulse status === 3 (Completed); pulse_status is the raw Pulse enum.",
+      "reason 'unknown' means Pulse could not be reached: NOT unpaid. Never discard/replace the session on 'unknown'.",
+      "Why it exists: a Medusa session stays 'pending' until the Pulse webhook or cart complete confirms it, even after the money is taken. Poll this (website polls every 4 s) after returning from the gateway, then complete the cart once paid is true.",
+      "No ownership check: anyone with the cart id can read this. Response is not cart-shaped, so no location annotations."
+    ],
+    "source": "app/ceedmart/src/api/store/carts/[id]/payment-status/route.ts"
+  },
+  {
+    "id": "cart-complete",
+    "group": "checkout",
+    "method": "POST",
+    "path": "/store/carts/{id}/complete",
+    "summary": "Place the order.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Cart id." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "Order fields on success." }
+    ],
+    "body": [],
+    "response": "Success: { type: 'order', order }. Payment authorization errors: 200 { type: 'cart', cart, error: { message, name, type } }. Other failures throw (4xx).",
+    "ceedmart_notes": [
+      "Refused (400, not_allowed, '<title>: This item is not available in <State>.') while any line is unavailable in the cart's province (completeCartWorkflow validate hook). Remove those lines first.",
+      "409 'Cart is already being completed by another request' on concurrent calls. The Pulse webhook can complete the cart itself, so a second call can fail with 'Cart ... is already completed'; check cart.completed_at first and treat that error as success (find the order via GET /store/orders when signed in, or orders-track).",
+      "Website sequence: getOrSetCart (create on default channel with region_id + metadata.ceedmart.province) -> add items -> email + shipping/billing addresses (cart-update) -> fulfillment metadata + shipping method -> payment-options -> payment-status check -> payment session (Pulse) -> redirect to checkout_url -> on return poll cart session status and payment-status -> complete once paid.",
+      "Pre-order lines: the website stamps metadata.ceedmart.terms_version_id (from GET /store/preorders/{id} terms.version_id) before checkout; the order.placed subscriber records the acceptance. The backend does not block complete without it (gating is client-side).",
+      "cart.metadata (including metadata.ceedmart) is copied to order.metadata."
+    ],
+    "source": "packages/medusa/src/api/store/carts/[id]/complete/route.ts"
+  },
+  {
+    "id": "orders-list",
+    "group": "orders",
+    "method": "GET",
+    "path": "/store/orders",
+    "summary": "List the signed-in customer's orders.",
+    "auth": "publishable_key+customer",
+    "path_params": [],
+    "query": [
+      { "name": "id", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "status", "type": "string|string[]", "required": false, "description": "" },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 50." },
+      { "name": "offset", "type": "number", "required": false, "description": "" },
+      { "name": "order", "type": "string", "required": false, "description": "" },
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ orders[], count, offset, limit }",
+    "ceedmart_notes": [
+      "Excludes draft orders (POS uses drafts). order.metadata.ceedmart carries channel/fulfillment/store_id/province etc. from the cart."
+    ],
+    "source": "packages/medusa/src/api/store/orders/route.ts"
+  },
+  {
+    "id": "orders-get",
+    "group": "orders",
+    "method": "GET",
+    "path": "/store/orders/{id}",
+    "summary": "Get an order by id.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Order id (not display_id)." }
+    ],
+    "query": [
+      { "name": "fields", "type": "string", "required": false, "description": "" }
+    ],
+    "body": [],
+    "response": "{ order }",
+    "ceedmart_notes": [
+      "Stock Medusa: no customer check, anyone with the order id can read it. Ceedmart's emails link to the web page /ng/order/{id}/confirmed."
+    ],
+    "source": "packages/medusa/src/api/store/orders/[id]/route.ts"
+  },
+  {
+    "id": "orders-track",
+    "group": "orders",
+    "method": "GET",
+    "path": "/store/orders/track",
+    "summary": "Public order tracking by order number plus email or phone.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "ref", "type": "string", "required": true, "description": "Order display_id; a leading '#' is allowed." },
+      { "name": "contact", "type": "string", "required": true, "description": "Email (if it contains '@', case-insensitive match on order.email) or phone (whitespace stripped, exact match on shipping_address.phone)." }
+    ],
+    "body": [],
+    "response": "{ order: { id, display_id, status, payment_status, fulfillment_status, currency_code, total, item_count, tracking_number|null, shipped_at|null, delivered_at|null } }",
+    "ceedmart_notes": [
+      "Any mismatch returns 404 'No matching order' (never says which part was wrong). Missing params -> 400.",
+      "Phone must match the shipping address phone exactly as stored (no +234 normalisation). Pickup orders without a shipping address phone can only be tracked by email.",
+      "Rate limited to 20 requests/minute per IP+contact -> 429 { message }. Fails open if the cache is down.",
+      "No line items or addresses in the response."
+    ],
+    "source": "app/ceedmart/src/api/store/orders/track/route.ts"
+  },
+  {
+    "id": "banners-list",
+    "group": "content",
+    "method": "GET",
+    "path": "/store/banners",
+    "summary": "Active banners for a slot.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "slot", "type": "string", "required": true, "description": "One of home_hero_desktop, home_hero_mobile, home_secondary, category_banner, promo_strip, product_sidebar, category_carousel." },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 10, max 50." }
+    ],
+    "body": [],
+    "response": "{ banners: [{ id, slot, image_url, image_width, image_height, link_url, cta_1_label, cta_2_url, cta_2_label, headline, subheadline, primary_color, secondary_color, alt_text, priority }] } sorted by priority desc.",
+    "ceedmart_notes": [
+      "Missing or unknown slot -> 400.",
+      "Only status 'active' within starts_at/ends_at. Scoped to the store default channel when the key includes it (banners with null sales_channel_id show everywhere); there is no per-location banner selection."
+    ],
+    "source": "app/ceedmart/src/api/store/banners/route.ts"
+  },
+  {
+    "id": "feature-flags-get",
+    "group": "misc",
+    "method": "GET",
+    "path": "/store/feature-flags",
+    "summary": "Which optional features are switched on.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [],
+    "body": [],
+    "response": "{ flags: { preorder: boolean, custom_build: boolean, build_configurator: boolean, auction: boolean } }",
+    "ceedmart_notes": [
+      "Backed by env vars FEATURE_PREORDER, FEATURE_CUSTOM_BUILD, FEATURE_BUILD_CONFIGURATOR, FEATURE_AUCTION ('true' or '1'); all default OFF. Read at request time.",
+      "Gated routes return 404 'Not found' when their flag is off, indistinguishable from a missing route. Check this before showing preorder/build/auction features.",
+      "Cache-Control: public, max-age=30."
+    ],
+    "source": "app/ceedmart/src/api/store/feature-flags/route.ts"
+  },
+  {
+    "id": "preorders-list",
+    "group": "preorders",
+    "method": "GET",
+    "path": "/store/preorders",
+    "summary": "List active US pre-order offers with price and delivery estimate.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "state", "type": "string", "required": false, "description": "Shopper's state, compared case-insensitively against the offer's delivery_states (exact string). Format of stored states not verified (could be names or codes)." },
+      { "name": "q", "type": "string", "required": false, "description": "Every word must appear in title/variant/condition/warranty/source/includes." },
+      { "name": "condition", "type": "string", "required": false, "description": "" },
+      { "name": "source", "type": "string", "required": false, "description": "Source country code." },
+      { "name": "max_days", "type": "number", "required": false, "description": "" },
+      { "name": "min_price", "type": "number", "required": false, "description": "In naira; compared to price*100 (price is in kobo)." },
+      { "name": "max_price", "type": "number", "required": false, "description": "In naira." },
+      { "name": "sort", "type": "string", "required": false, "description": "price_asc | price_desc | fastest (unavailable sink to the bottom)." },
+      { "name": "limit", "type": "number", "required": false, "description": "Offers fetched before filtering, default 50." }
+    ],
+    "body": [],
+    "response": "{ preorders: [{ id, product_id, variant_id, title, handle, thumbnail, variant_title, price, currency_code, price_is_final: true, estimate_days, estimated_delivery_date, includes[], excludes[], source_country_code, condition, warranty_text, offer_expires_at, available, unavailable_reason }], count, total, facets: { conditions[], sources[], max_days, price_range: { min, max }|null } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_PREORDER (404 when off).",
+      "If an offer has delivery_states and no state is passed, available is false ('Doesn't ship to your state yet.').",
+      "Per the route code, price (locked_price) is in kobo; check against product prices before displaying.",
+      "Filtering happens over the fetched page only (limit), not the whole catalogue."
+    ],
+    "source": "app/ceedmart/src/api/store/preorders/route.ts"
+  },
+  {
+    "id": "preorders-get",
+    "group": "preorders",
+    "method": "GET",
+    "path": "/store/preorders/{id}",
+    "summary": "Pre-order offer detail including terms to accept.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Pre-order offer id." }
+    ],
+    "query": [
+      { "name": "state", "type": "string", "required": false, "description": "Shopper's state (see preorders-list)." }
+    ],
+    "body": [],
+    "response": "{ preorder: { id, product_id, variant_id, price, currency_code, price_is_final, estimate_days, estimated_delivery_date, estimate_breakdown { procurement_days, transit_days, customs_days }, includes[], excludes[], source_country_code, condition, condition_notes, warranty_text, warranty_provider, return_policy_text, max_per_order, offer_expires_at, delivers_to_state, delivery_states[], available, unavailable_reason, terms: { version_id, version, body }|null } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_PREORDER. Inactive or missing offer -> 404.",
+      "Buying: add variant_id to the normal cart, show terms.body, and on acceptance merge metadata.ceedmart.terms_version_id = terms.version_id into the cart (website behaviour). An order.placed subscriber turns pre-order lines into tracked pre-order contracts."
+    ],
+    "source": "app/ceedmart/src/api/store/preorders/[id]/route.ts"
+  },
+  {
+    "id": "builds-catalog",
+    "group": "builds",
+    "method": "GET",
+    "path": "/store/builds/catalog",
+    "summary": "Component catalogue for the guided PC/laptop configurator.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "build_type", "type": "string", "required": false, "description": "'laptop' or anything else = 'desktop'." },
+      { "name": "model_family", "type": "string", "required": false, "description": "Laptop model family; family-specific options only appear when it matches." }
+    ],
+    "body": [],
+    "response": "{ build_type, categories: [{ code, label, is_required, allows_multiple, max_quantity, help_text, options: [{ id, label, brand, variant_id, attributes, is_fixed }] }] }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_BUILD_CONFIGURATOR.",
+      "No prices in this payload."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/catalog/route.ts"
+  },
+  {
+    "id": "builds-validate",
+    "group": "builds",
+    "method": "POST",
+    "path": "/store/builds/validate",
+    "summary": "Server-side compatibility check of configurator selections.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "build_type", "type": "'desktop'|'laptop'", "required": false, "description": "Default desktop." },
+      { "name": "selections", "type": "[{ category_code, option_id, quantity? }]", "required": true, "description": "Picked options." },
+      { "name": "acknowledged_warnings", "type": "string[]", "required": false, "description": "Warning identifiers the user accepted." }
+    ],
+    "response": "{ blocking[], warnings[], missing[] (category codes), missing_labels[], unacknowledged[], can_submit: boolean }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_BUILD_CONFIGURATOR. Exact shape of blocking/warnings entries comes from lib/build-catalog/compatibility (entries have at least a message)."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/validate/route.ts"
+  },
+  {
+    "id": "builds-configurations-list",
+    "group": "builds",
+    "method": "GET",
+    "path": "/store/builds/configurations",
+    "summary": "List saved configurations for the customer or an anonymous session token.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [
+      { "name": "session_token", "type": "string", "required": false, "description": "Client-held token for anonymous users; ignored when signed in." }
+    ],
+    "body": [],
+    "response": "{ configurations[] } (raw records, newest first, max 50). Empty if neither signed in nor session_token.",
+    "ceedmart_notes": [
+      "Gated by FEATURE_BUILD_CONFIGURATOR."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/configurations/route.ts"
+  },
+  {
+    "id": "builds-configurations-create",
+    "group": "builds",
+    "method": "POST",
+    "path": "/store/builds/configurations",
+    "summary": "Save (or duplicate) a configurator build.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "selections", "type": "[{ category_code, option_id, quantity? }]", "required": true, "description": "At least one; ignored when copy_from is given." },
+      { "name": "build_type", "type": "'desktop'|'laptop'", "required": false, "description": "" },
+      { "name": "name", "type": "string", "required": false, "description": "" },
+      { "name": "model_family", "type": "string", "required": false, "description": "" },
+      { "name": "acknowledged_warnings", "type": "string[]", "required": false, "description": "" },
+      { "name": "session_token", "type": "string", "required": false, "description": "Required when not signed in." },
+      { "name": "copy_from", "type": "string", "required": false, "description": "Reference (BC-XXXXXX) of a configuration to duplicate." }
+    ],
+    "response": "201 { configuration (includes reference 'BC-XXXXXX'), validation: { blocking, warnings, missing, can_submit } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_BUILD_CONFIGURATOR. 400 if neither signed in nor session_token."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/configurations/route.ts"
+  },
+  {
+    "id": "builds-configuration-get",
+    "group": "builds",
+    "method": "GET",
+    "path": "/store/builds/configurations/{id}",
+    "summary": "Get a saved configuration by reference.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Configuration REFERENCE (e.g. BC-XXXXXX), not the database id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "{ configuration: { ...record, picks: [{ category_code, label, quantity, ... }] } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_BUILD_CONFIGURATOR. No ownership check: anyone with the reference can read it."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/configurations/[id]/route.ts"
+  },
+  {
+    "id": "builds-configuration-submit",
+    "group": "builds",
+    "method": "POST",
+    "path": "/store/builds/configurations/{id}",
+    "summary": "Submit a saved configuration for a specialist quote.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Configuration reference." }
+    ],
+    "query": [],
+    "body": [
+      { "name": "customer_name", "type": "string", "required": true, "description": "" },
+      { "name": "customer_email", "type": "string(email)", "required": true, "description": "" },
+      { "name": "customer_phone", "type": "string", "required": false, "description": "" },
+      { "name": "delivery_state", "type": "string", "required": false, "description": "" },
+      { "name": "needed_by", "type": "string(date)", "required": false, "description": "" },
+      { "name": "notes", "type": "string", "required": false, "description": "" },
+      { "name": "acknowledged_warnings", "type": "string[]", "required": false, "description": "Overrides those saved on the configuration." }
+    ],
+    "response": "201 { request: { reference ('CB-XXXXXX'), status: 'submitted' } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_BUILD_CONFIGURATOR (not CUSTOM_BUILD), though it creates a custom-build request whose quote endpoints are gated by FEATURE_CUSTOM_BUILD.",
+      "400 (not_allowed) if already submitted, or if re-validation finds blocking issues, missing parts or unacknowledged warnings."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/configurations/[id]/route.ts"
+  },
+  {
+    "id": "builds-request-create",
+    "group": "builds",
+    "method": "POST",
+    "path": "/store/builds/requests",
+    "summary": "Submit an assisted custom-build request (plain-language needs).",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "customer_name", "type": "string", "required": true, "description": "" },
+      { "name": "customer_email", "type": "string(email)", "required": true, "description": "" },
+      { "name": "intended_use", "type": "string", "required": true, "description": "What the machine is for." },
+      { "name": "customer_phone", "type": "string", "required": false, "description": "" },
+      { "name": "delivery_state", "type": "string", "required": false, "description": "" },
+      { "name": "build_type", "type": "'desktop'|'laptop'", "required": false, "description": "Default desktop." },
+      { "name": "preferred_brands", "type": "string[]", "required": false, "description": "" },
+      { "name": "required_software", "type": "string[]", "required": false, "description": "" },
+      { "name": "performance_notes", "type": "string", "required": false, "description": "" },
+      { "name": "portability_needs", "type": "string", "required": false, "description": "" },
+      { "name": "required_accessories", "type": "string[]", "required": false, "description": "" },
+      { "name": "needed_by", "type": "string(date)", "required": false, "description": "" },
+      { "name": "notes", "type": "string", "required": false, "description": "" }
+    ],
+    "response": "201 { request: { id, reference ('CB-XXXXXX'), status: 'submitted' } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_CUSTOM_BUILD. Links the request to the customer if signed in. Sends an acknowledgement email to the customer."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/requests/route.ts"
+  },
+  {
+    "id": "builds-quote-get",
+    "group": "builds",
+    "method": "GET",
+    "path": "/store/builds/quotes/{id}",
+    "summary": "Customer view of the current version of a build quote.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Quote REFERENCE (from the customer's email), not the database id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "{ quote: { reference, status, version, version_count, line_items, service_items, subtotal, discount_total, tax_total, delivery_total, total, currency_code, build_days, warranty_text, cancellation_terms, valid_until, change_note, build_type, can_accept, blocked_reason, terms: { version_id, version, body }|null } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_CUSTOM_BUILD. Guests can read it by reference (no ownership check)."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/quotes/[id]/route.ts"
+  },
+  {
+    "id": "builds-quote-respond",
+    "group": "builds",
+    "method": "POST",
+    "path": "/store/builds/quotes/{id}",
+    "summary": "Accept, reject or ask for changes to a build quote.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Quote reference." }
+    ],
+    "query": [],
+    "body": [
+      { "name": "action", "type": "'accept'|'reject'|'request_revision'", "required": true, "description": "" },
+      { "name": "note", "type": "string", "required": false, "description": "Reason / requested changes." }
+    ],
+    "response": "accept: { build: { reference, status: 'quote_accepted', total, currency_code } }. reject/request_revision: { quote: { reference, status: 'rejected'|'revision_requested' } }.",
+    "ceedmart_notes": [
+      "Gated by FEATURE_CUSTOM_BUILD. No sign-in or ownership check; the reference is the credential.",
+      "Accept fails 400 not_allowed when the version is no longer acceptable (expired/superseded). Accepting does not take payment ('We'll send payment details shortly'); there is no store endpoint to pay for a build."
+    ],
+    "source": "app/ceedmart/src/api/store/builds/quotes/[id]/route.ts"
+  },
+  {
+    "id": "auctions-list",
+    "group": "auctions",
+    "method": "GET",
+    "path": "/store/auctions",
+    "summary": "List public auctions.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "status", "type": "string", "required": false, "description": "Comma-separated subset of scheduled, live, ended, awaiting_winner_payment, reserve_not_met, paid, fulfilment, completed, cancelled. Default all of them." },
+      { "name": "limit", "type": "number", "required": false, "description": "Default 50." }
+    ],
+    "body": [],
+    "response": "{ auctions: [{ id, reference, title, description, images[], condition, status, starts_at, ends_at, seconds_remaining, starting_price, current_price|null, buy_now_price|null, currency_code, bid_count, has_reserve, reserve_met }], server_time } ordered by ends_at asc.",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION. Drafts never listed. Reserve price itself is hidden. Cache-Control max-age=15."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/route.ts"
+  },
+  {
+    "id": "auction-live",
+    "group": "auctions",
+    "method": "GET",
+    "path": "/store/auctions/{id}/live",
+    "summary": "Poll target for a live auction's state.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Auction id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "{ id, status, current_price|null, starting_price, min_next_bid, min_increment, buy_now_price|null, currency_code, bid_count, has_reserve, reserve_met, ends_at, seconds_remaining, server_time, extension_count, viewer_is_leading }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION. Short polling is the intended design (no websockets). Cache-Control: no-store.",
+      "viewer_is_leading is only meaningful with a customer bearer token. ends_at can move (anti-sniping extensions); use seconds_remaining/server_time rather than the device clock."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/[id]/live/route.ts"
+  },
+  {
+    "id": "auction-bids-list",
+    "group": "auctions",
+    "method": "GET",
+    "path": "/store/auctions/{id}/bids",
+    "summary": "Public bid history (bidders masked).",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Auction id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "{ bids: [{ sequence, bidder (masked handle), amount, placed_at, kind, voided, triggered_extension }] } newest first, max 50.",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/[id]/bids/route.ts"
+  },
+  {
+    "id": "auction-bid-place",
+    "group": "auctions",
+    "method": "POST",
+    "path": "/store/auctions/{id}/bids",
+    "summary": "Place a bid or Buy Now.",
+    "auth": "publishable_key+customer",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Auction id." }
+    ],
+    "query": [],
+    "body": [
+      { "name": "amount", "type": "number", "required": true, "description": "Bid amount (validated inside the auction module against min_next_bid)." },
+      { "name": "kind", "type": "'bid'|'buy_now'", "required": false, "description": "Default 'bid'. buy_now ends the auction." },
+      { "name": "accept_terms", "type": "boolean", "required": false, "description": "Send true on the first bid to record auction terms acceptance." }
+    ],
+    "response": "201 { bid: { sequence, amount, placed_at, triggered_extension }, auction: { current_price, bid_count, ends_at, min_next_bid, extended } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION. Not signed in -> 400 not_allowed 'Sign in to place a bid.'.",
+      "Requires bidder eligibility: verified email AND verified Nigerian phone, not barred; otherwise 400 with e.g. 'Verify your phone number before bidding.'. Phone is verified via auction-verification-send/confirm. How email verification is set was not traced.",
+      "If the auction has a deposit_amount, a deposit may also be required (enforced inside placeBid; not verified here)."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/[id]/bids/route.ts"
+  },
+  {
+    "id": "auction-deposit-get",
+    "group": "auctions",
+    "method": "GET",
+    "path": "/store/auctions/{id}/deposit",
+    "summary": "Whether a deposit is required and the viewer's deposit status.",
+    "auth": "publishable_key+customer_optional",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Auction id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "Signed in: { required, amount|null, currency_code, deposit: { status, amount, authorized_at }|null }. Guest: { deposit: null, required: false } (does not reveal whether one is required).",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/[id]/deposit/route.ts"
+  },
+  {
+    "id": "auction-deposit-place",
+    "group": "auctions",
+    "method": "POST",
+    "path": "/store/auctions/{id}/deposit",
+    "summary": "Record a bidder deposit hold (authorisation reference from the payment provider).",
+    "auth": "publishable_key+customer",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Auction id." }
+    ],
+    "query": [],
+    "body": [
+      { "name": "authorization_reference", "type": "string", "required": true, "description": "Gateway authorisation/hold reference." }
+    ],
+    "response": "201 { deposit: { status: 'authorized', amount } }; 200 with the existing deposit if one already exists (idempotent).",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION. Requires eligibility (as bidding).",
+      "This only RECORDS a hold; it does not call any gateway. There is no store endpoint that creates the hold, so how a client obtains authorization_reference is unresolved in code."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/[id]/deposit/route.ts"
+  },
+  {
+    "id": "auction-verification-send",
+    "group": "auctions",
+    "method": "POST",
+    "path": "/store/auctions/verification/send",
+    "summary": "Send an SMS code to verify the bidder's Nigerian phone.",
+    "auth": "publishable_key+customer",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "phone", "type": "string", "required": true, "description": "Nigerian mobile; normalised to +234XXXXXXXXXX (10-digit local part starting 7/8/9)." }
+    ],
+    "response": "{ sent: boolean, phone (normalised), retryAfterSeconds }; sent=false within the resend cooldown (not an error).",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION. 400 'That doesn't look like a Nigerian mobile number.' on bad input.",
+      "Response key is camelCase retryAfterSeconds."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/verification/send/route.ts"
+  },
+  {
+    "id": "auction-verification-confirm",
+    "group": "auctions",
+    "method": "POST",
+    "path": "/store/auctions/verification/confirm",
+    "summary": "Confirm the phone verification code.",
+    "auth": "publishable_key+customer",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "code", "type": "string", "required": true, "description": "The SMS code." }
+    ],
+    "response": "{ verified: boolean, message?: string, eligibility: { eligible, emailVerified, phoneVerified, barred, reason|null } }",
+    "ceedmart_notes": [
+      "Gated by FEATURE_AUCTION. Wrong/expired code returns 200 with verified=false and a message, not an error status.",
+      "eligibility keys are camelCase."
+    ],
+    "source": "app/ceedmart/src/api/store/auctions/verification/confirm/route.ts"
+  },
+  {
+    "id": "solar-recommend",
+    "group": "solar",
+    "method": "POST",
+    "path": "/store/solar/recommend",
+    "summary": "Size a solar system from an appliance list and recommend bundles.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "appliances", "type": "[{ name, qty, watts, hours_per_day, period: 'day'|'night'|'both', critical?, surge_factor? }]", "required": true, "description": "At least one." },
+      { "name": "session_id", "type": "string", "required": false, "description": "Stored with the calculation." },
+      { "name": "locale", "type": "string", "required": false, "description": "" }
+    ],
+    "response": "{ calculation_id|null, load: { appliances, total_load_w, peak_load_w, daily_kwh, day_kwh, night_kwh, has_heavy_motors, margin_pct }, catalog_ready, bundles: [{ tier: 'budget'|'recommended'|'premium', margin_pct, inverter, battery, panels, total_price, currency_code, why[], can_power[], cannot_power[] }], notes[] }",
+    "ceedmart_notes": [
+      "Not feature-flagged. Products are drawn from the store default channel (resolveStoreSalesChannelId), not the chosen location, and are not location-priced.",
+      "Pass calculation_id and the chosen bundle to solar-quote-create."
+    ],
+    "source": "app/ceedmart/src/api/store/solar/recommend/route.ts"
+  },
+  {
+    "id": "solar-quote-create",
+    "group": "solar",
+    "method": "POST",
+    "path": "/store/solar/quotes",
+    "summary": "Request a solar installation quote for a chosen bundle.",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [],
+    "body": [
+      { "name": "selected_tier", "type": "'budget'|'recommended'|'premium'", "required": true, "description": "" },
+      { "name": "selected_bundle", "type": "SolarBundle", "required": true, "description": "The bundle object from solar-recommend, sent back as-is." },
+      { "name": "customer_name", "type": "string", "required": true, "description": "" },
+      { "name": "customer_email", "type": "string(email)", "required": true, "description": "" },
+      { "name": "calculation_id", "type": "string", "required": false, "description": "From solar-recommend." },
+      { "name": "customer_phone", "type": "string", "required": false, "description": "" },
+      { "name": "customer_location", "type": "string", "required": false, "description": "" },
+      { "name": "notes", "type": "string", "required": false, "description": "" }
+    ],
+    "response": "201 { quote } (raw solar_quote record: id, status 'new', customer fields, selected_bundle, ...)",
+    "ceedmart_notes": [
+      "Not feature-flagged. Creates a sales lead and emails the sales inbox; no cart or order is created."
+    ],
+    "source": "app/ceedmart/src/api/store/solar/quotes/route.ts"
+  },
+  {
+    "id": "requisitions-list",
+    "group": "requisitions",
+    "method": "GET",
+    "path": "/store/requisitions",
+    "summary": "List open job postings (careers).",
+    "auth": "publishable_key",
+    "path_params": [],
+    "query": [
+      { "name": "limit", "type": "number", "required": false, "description": "Default 50, max 100." }
+    ],
+    "body": [],
+    "response": "{ requisitions[] (raw records, status 'open', newest first), count }",
+    "ceedmart_notes": [],
+    "source": "app/ceedmart/src/api/store/requisitions/route.ts"
+  },
+  {
+    "id": "requisitions-get",
+    "group": "requisitions",
+    "method": "GET",
+    "path": "/store/requisitions/{id}",
+    "summary": "Get one open job posting.",
+    "auth": "publishable_key",
+    "path_params": [
+      { "name": "id", "type": "string", "description": "Requisition id." }
+    ],
+    "query": [],
+    "body": [],
+    "response": "{ requisition }",
+    "ceedmart_notes": [
+      "404 if missing or not open."
+    ],
+    "source": "app/ceedmart/src/api/store/requisitions/[id]/route.ts"
+  }
+]

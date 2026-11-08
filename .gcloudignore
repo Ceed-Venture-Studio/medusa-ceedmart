@@ -6,6 +6,8 @@
 docs/
 integration-tests/
 www/
+# Developer tooling shipped separately (e.g. the store API MCP server)
+tools/
 **/__tests__/
 **/*.test.*
 **/*.spec.*
