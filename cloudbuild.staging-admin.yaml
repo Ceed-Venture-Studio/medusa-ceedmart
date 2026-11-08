@@ -1,0 +1,53 @@
+# Cloud Build pipeline for the STAGING admin dashboard only.
+#
+# The admin bundle has the API URL baked in at build time, so staging cannot
+# reuse the production admin image. This builds the same Dockerfile.admin
+# against ceedmart-api-staging and pushes it as `admin-staging`, leaving the
+# production `admin` image and its :latest tag untouched.
+#
+# Trigger:
+#   gcloud builds submit --config=cloudbuild.staging-admin.yaml \
+#     --substitutions=SHORT_SHA=$(git rev-parse --short=10 HEAD)
+# Deploy: see the staging usage in deploy/deploy-cloudrun.sh.
+
+substitutions:
+  _REGION: europe-west1
+  _REPO: ceedmart-docker
+  _BACKEND_URL: https://ceedmart-api-staging-870514614467.europe-west1.run.app
+
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+  env:
+    - DOCKER_BUILDKIT=1
+
+timeout: 3600s
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin-staging:$SHORT_SHA
+
+steps:
+  # Layer cache from the production admin image: same Dockerfile, so only the
+  # bundle step (which reads MEDUSA_BACKEND_URL) differs.
+  - id: pull-admin-cache
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:latest || true
+
+  - id: build-admin
+    name: gcr.io/cloud-builders/docker
+    waitFor: ['pull-admin-cache']
+    args:
+      - build
+      - -f
+      - Dockerfile.admin
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin:latest
+      - --build-arg
+      - MEDUSA_BACKEND_URL=${_BACKEND_URL}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/admin-staging:$SHORT_SHA
+      - .

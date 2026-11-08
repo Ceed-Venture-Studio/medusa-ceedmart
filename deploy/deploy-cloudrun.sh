@@ -7,6 +7,12 @@
 #   SKIP_ADMIN=1 ./deploy/deploy-cloudrun.sh      # API only
 #   SKIP_API=1 ./deploy/deploy-cloudrun.sh        # Admin only
 #
+# Staging (anonymised copy on the private VM ceedmart-db-staging):
+#   ENV_FILE=app/ceedmart/.env.staging API_SERVICE=ceedmart-api-staging \
+#   ADMIN_SERVICE=ceedmart-admin-staging ADMIN_IMAGE=admin-staging \
+#   MIN_INSTANCES=0 VPC_NETWORK=default IMAGE_TAG=abc1234 \
+#   ./deploy/deploy-cloudrun.sh
+#
 # Prereqs:
 #   - gcloud auth (project=ceedmart, user=ceedrealty@gmail.com)
 #   - cloudbuild.yaml has built and pushed images to Artifact Registry
@@ -21,6 +27,18 @@ ENV_FILE="${ENV_FILE:-$(dirname "$0")/../app/ceedmart/.env.production}"
 
 API_SERVICE="${API_SERVICE:-ceedmart-api}"
 ADMIN_SERVICE="${ADMIN_SERVICE:-ceedmart-admin}"
+# The admin image has the API URL baked in at build time, so staging builds
+# its own (cloudbuild.staging-admin.yaml) under a different image name.
+ADMIN_IMAGE="${ADMIN_IMAGE:-admin}"
+# Production keeps one warm instance; staging can scale to zero.
+MIN_INSTANCES="${MIN_INSTANCES:-1}"
+
+# Direct VPC egress for a database reachable only on a private IP (staging).
+# Production reaches its database over a public IP and leaves this unset.
+VPC_FLAGS=()
+if [[ -n "${VPC_NETWORK:-}" ]]; then
+  VPC_FLAGS=(--network="$VPC_NETWORK" --subnet="${VPC_SUBNET:-$VPC_NETWORK}" --vpc-egress=private-ranges-only)
+fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: env file not found: $ENV_FILE" >&2
@@ -71,11 +89,12 @@ if [[ -z "${SKIP_API:-}" ]]; then
     --region="$REGION" \
     --image="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/api:${IMAGE_TAG}" \
     --port=9000 \
-    --min-instances=1 --max-instances=1 \
+    --min-instances="$MIN_INSTANCES" --max-instances=1 \
     --cpu=1 --memory=4Gi \
     --timeout=600 \
     --no-cpu-throttling \
     --allow-unauthenticated \
+    ${VPC_FLAGS[@]+"${VPC_FLAGS[@]}"} \
     --env-vars-file="$ENV_YAML"
 fi
 
@@ -84,7 +103,7 @@ if [[ -z "${SKIP_ADMIN:-}" ]]; then
   gcloud run deploy "$ADMIN_SERVICE" \
     --project="$PROJECT" \
     --region="$REGION" \
-    --image="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/admin:${IMAGE_TAG}" \
+    --image="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/${ADMIN_IMAGE}:${IMAGE_TAG}" \
     --port=8080 \
     --min-instances=0 --max-instances=3 \
     --cpu=1 --memory=512Mi \
