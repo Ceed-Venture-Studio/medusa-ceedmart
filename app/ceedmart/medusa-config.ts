@@ -361,6 +361,9 @@ export default defineConfig({
     listing_policy: {
       resolve: "./src/modules/listing-policy",
     },
+    location_catalog: {
+      resolve: "./src/modules/location-catalog",
+    },
     search_log: {
       resolve: "./src/modules/search-log",
     },

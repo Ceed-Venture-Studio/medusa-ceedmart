@@ -20,13 +20,19 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 export const WEB_LOCATION_METADATA_KEY = "ceedmart_web"
 
+// `province` is the state the location is priced and stocked for (see
+// lib/locations): a city is a picker entry, the state is what prices key on.
 export const WEB_LOCATIONS = [
-  { id: "port-harcourt", name: "Port Harcourt" },
-  { id: "uyo", name: "Uyo" },
-  { id: "lagos", name: "Lagos" },
+  { id: "port-harcourt", name: "Port Harcourt", province: "ng-ri" },
+  { id: "uyo", name: "Uyo", province: "ng-ak" },
+  { id: "lagos", name: "Lagos", province: "ng-la" },
 ] as const
 
 export type WebLocationId = (typeof WEB_LOCATIONS)[number]["id"]
+
+export const WEB_PROVINCE_BY_ID: Record<string, string> = Object.fromEntries(
+  WEB_LOCATIONS.map((l) => [l.id, l.province])
+)
 
 export const webLocationOf = (salesChannel: {
   metadata?: Record<string, any> | null

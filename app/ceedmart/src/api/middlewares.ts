@@ -1,6 +1,7 @@
 import {
   authenticate,
   defineMiddlewares,
+  validateAndTransformBody,
   MedusaNextFunction,
   MedusaRequest,
   MedusaResponse,
@@ -8,6 +9,12 @@ import {
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import multer from "multer"
 import { SEARCH_LOG_MODULE } from "../modules/search-log"
+import {
+  draftOrderAvailability,
+  storeCartLocation,
+  storeLocationCatalog,
+} from "../lib/location-catalog/http"
+import { AdminSetLocationCatalog } from "./admin/products/[id]/location-catalog/validators"
 import {
   keepStoredAddress,
   resolveBranchReceiptAddress,
@@ -150,7 +157,43 @@ export default defineMiddlewares({
     {
       method: ["GET"],
       matcher: "/store/products",
-      middlewares: [logCustomerSearch],
+      middlewares: [logCustomerSearch, storeLocationCatalog],
+    },
+    // Location pricing and availability (lib/location-catalog). Runs after
+    // Medusa's own middlewares, so the pricing context it extends exists.
+    {
+      method: ["GET"],
+      matcher: "/store/products/:id",
+      middlewares: [storeLocationCatalog],
+    },
+    {
+      method: ["GET"],
+      matcher: "/store/product-variants",
+      middlewares: [storeLocationCatalog],
+    },
+    {
+      method: ["GET"],
+      matcher: "/store/product-variants/:id",
+      middlewares: [storeLocationCatalog],
+    },
+    {
+      matcher: "/store/carts*",
+      middlewares: [storeCartLocation],
+    },
+    {
+      method: ["POST"],
+      matcher: "/admin/draft-orders",
+      middlewares: [draftOrderAvailability],
+    },
+    {
+      method: ["POST"],
+      matcher: "/admin/draft-orders/:id/edit/items",
+      middlewares: [draftOrderAvailability],
+    },
+    {
+      method: ["POST"],
+      matcher: "/admin/products/:id/location-catalog",
+      middlewares: [validateAndTransformBody(AdminSetLocationCatalog)],
     },
     {
       method: ["POST"],
