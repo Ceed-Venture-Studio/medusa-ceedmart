@@ -6,8 +6,11 @@ import {
   ContainerRegistrationKeys,
   getVariantAvailability,
   MedusaError,
-  QueryContext,
 } from "@medusajs/framework/utils"
+import {
+  annotatePosAvailability,
+  posPriceContext,
+} from "../../../../lib/location-catalog/pos"
 
 const POS_PRODUCT_FIELDS = [
   "id",
@@ -52,12 +55,8 @@ export const GET = async (
     )
   }
 
-  const priceContext = {
-    calculated_price: QueryContext({
-      region_id: ngnRegion.id,
-      currency_code: "ngn",
-    }),
-  }
+  // National price plus the shop's state price (lib/location-catalog).
+  const priceContext = await posPriceContext(req.scope, sales_channel_id, ngnRegion.id)
 
   const { data: links } = await query.graph({
     entity: "product_sales_channel",
@@ -108,6 +107,13 @@ export const GET = async (
     for (const v of variantsForPricing) {
       v.calculated_price = priceById.get(v.id) ?? null
     }
+    await annotatePosAvailability(
+      req.scope,
+      sales_channel_id,
+      products.flatMap((p: any) =>
+        (p.variants ?? []).map((variant: any) => ({ variant, productId: p.id }))
+      )
+    )
   }
 
   const variantIds = variantsForPricing

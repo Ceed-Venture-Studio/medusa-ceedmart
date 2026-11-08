@@ -61,6 +61,9 @@ export type CeedmartOrderMetadata = {
   /** Version of the customer-facing terms accepted at checkout (BRD §5.3).
    *  Points at a TermsVersion id. */
   terms_version_id?: string
+  // State the cart is priced and sold for (ISO 3166-2, "ng-la"); written
+  // by the client when the shopper picks a location. See lib/locations.
+  province?: string
 }
 
 /** Patch shape for ceedmartOrderMetadata merges: every field optional, and

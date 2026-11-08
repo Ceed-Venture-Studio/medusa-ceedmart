@@ -6,8 +6,13 @@ import {
   ContainerRegistrationKeys,
   getVariantAvailability,
   MedusaError,
-  QueryContext,
 } from "@medusajs/framework/utils"
+import {
+  annotatePosAvailability,
+  posPriceContext,
+} from "../../../../../lib/location-catalog/pos"
+import { assertVariantsAvailable } from "../../../../../lib/location-catalog/runtime"
+import { resolveSalesChannelProvince } from "../../../../../lib/locations"
 import {
   cartRejectionReason,
   isCartEligible,
@@ -130,14 +135,22 @@ export const GET = async (
     entity: "variant",
     fields: ["id", "calculated_price.*"],
     filters: { id: variant.id },
-    context: {
-      calculated_price: QueryContext({
-        region_id: ngnRegion.id,
-        currency_code: "ngn",
-      }),
-    },
+    // National price plus the shop's state price (lib/location-catalog).
+    context: await posPriceContext(req.scope, sales_channel_id, ngnRegion.id),
   })
   ;(variant as any).calculated_price = priced[0]?.calculated_price ?? null
+  await annotatePosAvailability(req.scope, sales_channel_id, [
+    { variant, productId: product.id },
+  ])
+  // Refused here, like the commerce types above, so the cashier is told on
+  // scan rather than when the draft order rejects the line.
+  if ((variant as any).available_here === false) {
+    await assertVariantsAvailable(
+      req.scope,
+      [variant.id],
+      await resolveSalesChannelProvince(req.scope, sales_channel_id)
+    )
+  }
 
   if (variant.manage_inventory) {
     const availability = await getVariantAvailability(query, {

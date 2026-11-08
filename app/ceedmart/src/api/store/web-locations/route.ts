@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   getDefaultSalesChannelId,
+  WEB_PROVINCE_BY_ID,
   webLocationOf,
 } from "../../../lib/web-locations"
 
@@ -30,7 +31,13 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
   const locations = (channels as any[])
     .filter((c) => !c.is_disabled && webLocationOf(c))
-    .map((c) => ({ id: webLocationOf(c)!, sales_channel_id: c.id }))
+    .map((c) => ({
+      id: webLocationOf(c)!,
+      sales_channel_id: c.id,
+      // The state the location is priced and sold for. A client stamps it on
+      // its cart as metadata.ceedmart.province (lib/locations).
+      province: WEB_PROVINCE_BY_ID[webLocationOf(c)!] ?? null,
+    }))
 
   const defaultId = await getDefaultSalesChannelId(req.scope)
 

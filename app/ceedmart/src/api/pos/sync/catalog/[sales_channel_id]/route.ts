@@ -6,8 +6,12 @@ import {
   ContainerRegistrationKeys,
   getVariantAvailability,
   MedusaError,
-  QueryContext,
 } from "@medusajs/framework/utils"
+import {
+  annotatePosAvailability,
+  locationCatalogChangedProductIds,
+  posPriceContext,
+} from "../../../../../lib/location-catalog/pos"
 
 // Delta sync for the offline POS catalog cache.
 //
@@ -72,12 +76,8 @@ export const GET = async (
       "Nigeria region (NGN) is not configured"
     )
   }
-  const priceContext = {
-    calculated_price: QueryContext({
-      region_id: ngnRegion.id,
-      currency_code: "ngn",
-    }),
-  }
+  // National price plus the shop's state price (lib/location-catalog).
+  const priceContext = await posPriceContext(req.scope, sales_channel_id, ngnRegion.id)
 
   // Limit to products in the requested sales channel.
   const { data: links } = await query.graph({
@@ -199,11 +199,18 @@ export const GET = async (
       new Set((deletedVariants as any[]).map((v) => v.product_id))
     ).filter((pid) => channelProductIds.includes(pid))
 
+    // Location prices and availability change without touching the product
+    // or (when a price is cleared) leaving a newer price row.
+    const locationChangedProductIds = (
+      await locationCatalogChangedProductIds(req.scope, sinceDate).catch(() => [])
+    ).filter((pid) => channelProductIds.includes(pid))
+
     const extraProductIds = Array.from(
       new Set([
         ...inventoryChangedProductIds,
         ...priceChangedProductIds,
         ...variantDeletedProductIds,
+        ...locationChangedProductIds,
       ])
     )
 
@@ -247,6 +254,13 @@ export const GET = async (
     for (const v of allVariants) {
       ;(v as any).calculated_price = priceById.get(v.id) ?? null
     }
+    await annotatePosAvailability(
+      req.scope,
+      sales_channel_id,
+      (products as any[]).flatMap((p) =>
+        (p.variants ?? []).map((variant: any) => ({ variant, productId: p.id }))
+      )
+    )
   }
 
   // Inventory snapshot for variants that manage inventory.
