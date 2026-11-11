@@ -7,6 +7,7 @@ import {
   MedusaResponse,
 } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import compression from "compression"
 import multer from "multer"
 import { SEARCH_LOG_MODULE } from "../modules/search-log"
 import {
@@ -20,6 +21,23 @@ import {
   resolveBranchReceiptAddress,
   withBranchAddress,
 } from "../lib/pos/branch-receipt-address"
+
+// Gzip JSON responses. Medusa v2 reads `http.compression` from the config
+// but never applies it, so it's wired here. Order lists and product
+// catalogs are several MB of repetitive JSON; on a shop's mobile data
+// connection that is the difference between loading and timing out.
+// Server-sent events (the admin's workflow subscriptions) must stream
+// unbuffered, so they are left alone.
+const gzip = compression({
+  filter: (req, res) =>
+    !String(res.getHeader("content-type") ?? "").includes("text/event-stream") &&
+    compression.filter(req, res),
+})
+const compressResponses = (
+  req: MedusaRequest,
+  res: MedusaResponse,
+  next: MedusaNextFunction
+) => gzip(req as any, res as any, next)
 
 // 10 MB cap per banner image — comfortably above the largest hero
 // (1920×823 png ~3-4 MB) and below memory thresholds.
@@ -140,6 +158,10 @@ const branchReceiptAddress = async (
 
 export default defineMiddlewares({
   routes: [
+    {
+      matcher: "/*",
+      middlewares: [compressResponses],
+    },
     {
       matcher: "/pos/*",
       middlewares: [authenticate("user", ["session", "bearer", "api-key"])],
