@@ -1,6 +1,6 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import { imageSize } from "image-size"
-import { getSlot, type BannerSlot } from "./slots"
+import { getSlot, type BannerSlot, type ImageSpec } from "./slots"
 
 const ASPECT_TOLERANCE = 0.01 // ±1%
 const ALLOWED_MIME = new Set([
@@ -9,11 +9,15 @@ const ALLOWED_MIME = new Set([
   "image/webp",
 ])
 
+export type ImageVariant = "desktop" | "mobile"
+
 export type ValidatedImage = {
   width: number
   height: number
   mime_type: string
   slot: BannerSlot
+  variant: ImageVariant
+  spec: ImageSpec
 }
 
 /**
@@ -22,12 +26,14 @@ export type ValidatedImage = {
  * propagate the error message back to the admin UI verbatim.
  *
  * Validates: slot key exists, mime type allowed, dimensions parse, min size
- * met, aspect ratio within ±1% of the slot's required aspect.
+ * met, aspect ratio within ±1% of the slot's required aspect. `variant`
+ * "mobile" checks against the slot's mobile spec, for slots that take one.
  */
 export function validateBannerImage(
   buffer: Buffer,
   mime_type: string,
-  slot_key: string
+  slot_key: string,
+  variant: ImageVariant = "desktop"
 ): ValidatedImage {
   const slot = getSlot(slot_key)
   if (!slot) {
@@ -36,6 +42,15 @@ export function validateBannerImage(
       `Unknown slot "${slot_key}". Allowed: ${[...allowedSlotKeys()].join(", ")}`
     )
   }
+
+  if (variant === "mobile" && !slot.mobile) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `Slot "${slot.label}" does not take a separate mobile image`
+    )
+  }
+  const spec: ImageSpec = variant === "mobile" ? slot.mobile! : slot
+  const label = variant === "mobile" ? `${slot.label} — mobile` : slot.label
 
   if (!ALLOWED_MIME.has(mime_type.toLowerCase())) {
     throw new MedusaError(
@@ -62,23 +77,23 @@ export function validateBannerImage(
     )
   }
 
-  if (width < slot.min_width || height < slot.min_height) {
+  if (width < spec.min_width || height < spec.min_height) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      `Image is ${width}×${height}px but slot "${slot.label}" requires at least ${slot.min_width}×${slot.min_height}px`
+      `Image is ${width}×${height}px but slot "${label}" requires at least ${spec.min_width}×${spec.min_height}px`
     )
   }
 
   const actualAspect = width / height
-  const drift = Math.abs(actualAspect - slot.aspect_ratio) / slot.aspect_ratio
+  const drift = Math.abs(actualAspect - spec.aspect_ratio) / spec.aspect_ratio
   if (drift > ASPECT_TOLERANCE) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      `Image aspect ratio is ${actualAspect.toFixed(3)} (${width}:${height}); slot "${slot.label}" requires ${slot.aspect_ratio.toFixed(3)} within ±1%`
+      `Image aspect ratio is ${actualAspect.toFixed(3)} (${width}:${height}); slot "${label}" requires ${spec.aspect_ratio.toFixed(3)} within ±1%`
     )
   }
 
-  return { width, height, mime_type, slot }
+  return { width, height, mime_type, slot, variant, spec }
 }
 
 function* allowedSlotKeys(): Iterable<string> {
