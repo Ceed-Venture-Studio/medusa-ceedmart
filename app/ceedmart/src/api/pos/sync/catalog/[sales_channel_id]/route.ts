@@ -156,8 +156,43 @@ export const GET = async (
       filters: { updated_at: { $gt: sinceDate } },
       pagination: { take: 10_000, skip: 0 },
     })
+    // A price list starting or ending changes the price a till should
+    // charge without touching any price row: when a Sale list's ends_at
+    // passes, every till would keep the sale price until the product was
+    // next edited. Re-send the products of any list that started, ended or
+    // was edited since the cursor.
+    const nowDate = new Date()
+    const crossed = { $gt: sinceDate, $lte: nowDate }
+    const { data: movedLists } = await query.graph({
+      entity: "price_list",
+      fields: ["id"],
+      filters: {
+        $or: [
+          { starts_at: crossed },
+          { ends_at: crossed },
+          { updated_at: { $gt: sinceDate } },
+        ],
+      },
+      withDeleted: true,
+      pagination: { take: 1_000, skip: 0 },
+    } as any).catch(() => ({ data: [] as any[] }))
+    const movedListIds = (movedLists as any[]).map((l) => l.id)
+    const { data: movedListPrices } = movedListIds.length
+      ? await query.graph({
+          entity: "price",
+          fields: ["price_set_id"],
+          filters: { price_list_id: movedListIds },
+          withDeleted: true,
+          pagination: { take: 10_000, skip: 0 },
+        } as any)
+      : { data: [] as any[] }
+
     const changedPriceSetIds = Array.from(
-      new Set((changedPrices as any[]).map((p) => p.price_set_id))
+      new Set(
+        [...(changedPrices as any[]), ...(movedListPrices as any[])].map(
+          (p) => p.price_set_id
+        )
+      )
     )
 
     let priceChangedProductIds: string[] = []
