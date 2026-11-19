@@ -1,4 +1,4 @@
-import ceedmartNotifications from "./ceedmart-notifications"
+import ceedmartNotifications from "../../subscribers/ceedmart-notifications"
 
 // The shop's order alert: who hears about an order, and what they read.
 
