@@ -379,6 +379,9 @@ export default defineConfig({
     stock_transfer: {
       resolve: "./src/modules/stock-transfer",
     },
+    smartai: {
+      resolve: "./src/modules/smartai",
+    },
     partner: {
       resolve: "./src/modules/partner",
     },

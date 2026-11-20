@@ -16,6 +16,7 @@ import {
   storeLocationCatalog,
 } from "../lib/location-catalog/http"
 import { AdminSetLocationCatalog } from "./admin/products/[id]/location-catalog/validators"
+import { requireSmartaiSecret } from "../lib/smartai/http"
 import {
   keepStoredAddress,
   resolveBranchReceiptAddress,
@@ -161,6 +162,11 @@ export default defineMiddlewares({
     {
       matcher: "/*",
       middlewares: [compressResponses],
+    },
+    // SmartAI shopping tools — called only by Ceedmart's shopping MCP.
+    {
+      matcher: "/smartai/*",
+      middlewares: [requireSmartaiSecret],
     },
     {
       matcher: "/pos/*",
