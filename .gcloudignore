@@ -6,8 +6,10 @@
 docs/
 integration-tests/
 www/
-# Developer tooling shipped separately (e.g. the store API MCP server)
-tools/
+# Developer tooling shipped separately (e.g. the MCP servers). Anchored: an
+# unanchored tools/ also dropped app/ceedmart/src/api/smartai/tools/ (the
+# SmartAI routes), which then 404'd on Cloud Run.
+/tools/
 **/__tests__/
 **/*.test.*
 **/*.spec.*
