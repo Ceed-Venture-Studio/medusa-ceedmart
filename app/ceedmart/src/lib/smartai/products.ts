@@ -15,6 +15,7 @@ import {
   filterAndSort,
   matchCategoryIds,
   norm,
+  preferTitleMatches,
   relevance,
   searchWords,
   SmartaiProduct,
@@ -133,9 +134,10 @@ export const searchProducts = async (
 
   const { storefrontUrl } = smartaiConfig()
   const catalog = await loadCatalog(container, loc, candidates)
-  const scored = catalog
+  const shaped = catalog
     .map((p, i) => ({ p, i, shaped: toSmartaiProduct(p, storefrontUrl) }))
     .filter((x): x is typeof x & { shaped: SmartaiProduct } => !!x.shaped)
+  const scored = preferTitleMatches(shaped, (x) => x.p.title, words)
     .map((x) => ({ ...x, score: terms.length ? relevance(x.p, terms, query) : 0 }))
     .sort((a, b) => b.score - a.score || a.i - b.i)
     .map((x) => x.shaped)

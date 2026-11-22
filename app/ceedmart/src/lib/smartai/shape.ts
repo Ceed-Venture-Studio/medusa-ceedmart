@@ -240,22 +240,63 @@ export const toSmartaiProduct = (
 
 // ── Search helpers ──────────────────────────────────────────────────────
 
-const STOP = new Set(["a", "an", "the", "of", "for", "and", "with", "in", "to", "on", "some", "me"])
+// Filler a shopper types around what they want ("I need rice for a party,
+// under ₦100,000"). Searched for, these match descriptions all over the shop.
+const STOP = new Set(
+  (
+    "a an the of for and or with in to on at by from some any me my i im we our you your it this that these those " +
+    "is are be can could would should will do does have has want wants need needs needed looking look find show give get buy " +
+    "please pls kindly like love good best great nice cheap cheaper cheapest affordable quality new original " +
+    "under below less than over above around about between within max min maximum minimum budget price prices cost costs " +
+    "naira ngn party event home house family people person day days week weeks something thing things item items product products " +
+    "available stock one two three more most other another also just only very really much many lot lots"
+  ).split(" ")
+)
 
-/** Words worth searching for, at most five. */
+/** Words worth searching for, at most five: no filler, no bare numbers. */
 export const searchWords = (query: string): string[] =>
-  [...new Set(norm(query).split(/[^a-z0-9.%]+/).filter((w) => w.length >= 2 && !STOP.has(w)))].slice(0, 5)
+  [
+    ...new Set(
+      norm(query)
+        .split(/[^a-z0-9.%]+/)
+        .map((w) => w.replace(/^\.+|\.+$/g, ""))
+        .filter((w) => w.length >= 2 && !STOP.has(w) && !/^[0-9.,%]+$/.test(w))
+    ),
+  ].slice(0, 5)
+
+const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/**
+ * Whether `text` has `word` as a word, or as the start of one so plurals
+ * count ("bean" finds "beans", "rice" does not find "price").
+ */
+export const hasWord = (text: string, word: string) =>
+  new RegExp(`(^|[^a-z0-9])${escape(word)}`).test(norm(text))
+
+/** How many of `words` are in the title. */
+export const titleHits = (title: string, words: string[]) =>
+  words.reduce((n, w) => n + (hasWord(title, w) ? 1 : 0), 0)
 
 /** Higher is better: words in the title count most, then anywhere. */
 export const relevance = (p: Pick<CatalogProduct, "title" | "description">, words: string[], query: string) => {
   const title = norm(p.title)
-  const body = norm(p.description)
-  let score = title.includes(norm(query)) ? 10 : 0
+  let score = norm(query) && title.includes(norm(query)) ? 10 : 0
   for (const w of words) {
-    if (title.includes(w)) score += 3
-    else if (body.includes(w)) score += 1
+    if (hasWord(title, w)) score += 3
+    else if (hasWord(p.description ?? "", w)) score += 1
   }
   return score
+}
+
+/**
+ * When some products have a searched word in their title, only those: a
+ * word in a description alone ("goes well with rice" on a tomato basket)
+ * is not what the shopper asked for. Otherwise everything, as before.
+ */
+export const preferTitleMatches = <T>(items: T[], titleOf: (x: T) => string, words: string[]) => {
+  if (!words.length) return items
+  const inTitle = items.filter((x) => titleHits(titleOf(x), words) > 0)
+  return inTitle.length ? inTitle : items
 }
 
 export type SortBy = "relevance" | "price_asc" | "price_desc" | "popular"

@@ -9,6 +9,8 @@ import {
   plainText,
   purchasable,
   refusal,
+  hasWord,
+  preferTitleMatches,
   relevance,
   searchWords,
   sizeLabel,
@@ -128,6 +130,31 @@ describe("search helpers", () => {
   it("keeps meaningful words only", () => {
     expect(searchWords("a 5 kVA inverter for the shop")).toEqual(["kva", "inverter", "shop"])
     expect(searchWords("50kg rice")).toEqual(["50kg", "rice"])
+  })
+
+  it("drops filler and prices from a shopper's sentence", () => {
+    expect(searchWords("I need rice for a party, under ₦100,000")).toEqual(["rice"])
+    expect(searchWords("show me cheap basmati rice below 20000 naira")).toEqual(["basmati", "rice"])
+    expect(searchWords("2.5kva inverter")).toEqual(["2.5kva", "inverter"])
+  })
+
+  it("matches whole words and plurals, not fragments", () => {
+    expect(hasWord("Honey Beans (Oloyin)", "bean")).toBe(true)
+    expect(hasWord("Best price guaranteed", "rice")).toBe(false)
+    expect(hasWord("Mama Gold Rice", "rice")).toBe(true)
+    expect(hasWord("Aurora 2.5kVA Inverter", "2.5kva")).toBe(true)
+  })
+
+  it("keeps only title matches when there are any", () => {
+    const items = [
+      { title: "Mango Rice", description: "" },
+      { title: "Fresh Tomato Basket", description: "Perfect for jollof rice" },
+      { title: "Titus Sardines", description: "Serve with rice" },
+    ]
+    expect(preferTitleMatches(items, (x) => x.title, ["rice"]).map((x) => x.title)).toEqual(["Mango Rice"])
+    // Nothing in a title: description matches are still better than nothing.
+    expect(preferTitleMatches(items, (x) => x.title, ["jollof"]).length).toBe(3)
+    expect(preferTitleMatches(items, (x) => x.title, []).length).toBe(3)
   })
 
   it("ranks title matches above description matches", () => {
