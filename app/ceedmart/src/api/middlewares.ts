@@ -163,6 +163,16 @@ export default defineMiddlewares({
       matcher: "/*",
       middlewares: [compressResponses],
     },
+    // Shopping assistant for the app (lib/assistant): a signed-in customer is
+    // recognised when present; guests prove themselves with a guest token.
+    {
+      matcher: "/store/assistant/chat",
+      middlewares: [authenticate("customer", ["session", "bearer"], { allowUnauthenticated: true })],
+    },
+    {
+      matcher: "/store/assistant/cart",
+      middlewares: [authenticate("customer", ["session", "bearer"], { allowUnauthenticated: true })],
+    },
     // SmartAI shopping tools — called only by Ceedmart's shopping MCP.
     {
       matcher: "/smartai/*",

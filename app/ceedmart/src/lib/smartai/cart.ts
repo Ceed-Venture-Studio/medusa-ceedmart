@@ -36,7 +36,7 @@ type Action = (typeof ACTIONS)[number]
 /** A bad call (not a store outcome): the route answers 400, the MCP an error. */
 export class SmartaiBadRequest extends Error {}
 
-const checkoutUrl = (cartId: string) => {
+export const checkoutUrl = (cartId: string) => {
   const { storefrontUrl } = smartaiConfig()
   return storefrontUrl ? `${storefrontUrl}/ng/cart/continue?cart=${encodeURIComponent(cartId)}` : undefined
 }
@@ -319,3 +319,22 @@ export const manageCart = async (
   }
   return result(container, loc, live.id)
 }
+
+/**
+ * The shopper's chat cart for the app's "Checkout" button: its id, the link
+ * that opens it on the website, and its size. Nulls when there is none.
+ */
+export const chatCartFor = async (
+  container: MedusaContainer,
+  shopperId: string
+): Promise<{ cart_id: string | null; checkout_url: string | null; item_count: number }> => {
+  const loc = await getShopLocation(container)
+  const live = await currentCart(container, loc, shopperId)
+  if (!live) return { cart_id: null, checkout_url: null, item_count: 0 }
+  return {
+    cart_id: live.id,
+    checkout_url: checkoutUrl(live.id) ?? null,
+    item_count: live.lines.reduce((n, l) => n + (Number(l.quantity) || 0), 0),
+  }
+}
+
