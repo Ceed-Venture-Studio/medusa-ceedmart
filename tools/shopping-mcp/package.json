@@ -1,0 +1,19 @@
+{
+  "name": "ceedmart-shopping-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server with Ceedmart's three shopping tools for the SmartAI shopping assistant: get_initial_recommendations, search_products, manage_cart.",
+  "type": "module",
+  "main": "src/http.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/http.js",
+    "test": "node --test src/"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}
