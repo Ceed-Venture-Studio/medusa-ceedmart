@@ -11,11 +11,18 @@ type CreateBody = {
   image_width: number
   image_height: number
   image_mime_type: string
+  mobile_image_url?: string | null
+  mobile_image_key?: string | null
+  mobile_image_width?: number | null
+  mobile_image_height?: number | null
+  mobile_image_mime_type?: string | null
   link_url?: string | null
   cta_1_label?: string | null
   cta_2_url?: string | null
   cta_2_label?: string | null
+  eyebrow?: string | null
   headline?: string | null
+  headline_highlight?: string | null
   subheadline?: string | null
   primary_color?: string | null
   secondary_color?: string | null
@@ -73,11 +80,18 @@ export const POST = async (req: AuthenticatedMedusaRequest<CreateBody>, res: Med
     image_width: body.image_width,
     image_height: body.image_height,
     image_mime_type: body.image_mime_type,
+    mobile_image_url: body.mobile_image_url || null,
+    mobile_image_key: body.mobile_image_key || null,
+    mobile_image_width: body.mobile_image_url ? body.mobile_image_width ?? null : null,
+    mobile_image_height: body.mobile_image_url ? body.mobile_image_height ?? null : null,
+    mobile_image_mime_type: body.mobile_image_url ? body.mobile_image_mime_type ?? null : null,
     link_url: body.link_url?.trim() || null,
     cta_1_label: body.cta_1_label?.trim() || null,
     cta_2_url: body.cta_2_url?.trim() || null,
     cta_2_label: body.cta_2_label?.trim() || null,
+    eyebrow: body.eyebrow?.trim() || null,
     headline: body.headline?.trim() || null,
+    headline_highlight: body.headline_highlight?.trim() || null,
     subheadline: body.subheadline?.trim() || null,
     primary_color: body.primary_color?.trim() || null,
     secondary_color: body.secondary_color?.trim() || null,
